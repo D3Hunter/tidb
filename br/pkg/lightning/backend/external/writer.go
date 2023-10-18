@@ -199,7 +199,7 @@ func (b *WriterBuilder) Build(
 		},
 		memSizeLimit:   b.memSizeLimit,
 		store:          store,
-		kvBuffer:       bp.NewBuffer(),
+		kvBuffer:       newKVBuf(b.memSizeLimit),
 		writeBatch:     make([]common.KvPair, 0, b.writeBatchCount),
 		currentSeq:     0,
 		filenamePrefix: filenamePrefix,
@@ -279,7 +279,7 @@ type Writer struct {
 
 	memSizeLimit uint64
 
-	kvBuffer   *membuf.Buffer
+	kvBuffer   *kvBuf
 	writeBatch []common.KvPair
 
 	onClose OnCloseFunc
@@ -310,16 +310,20 @@ func (w *Writer) WriteRow(ctx context.Context, idxKey, idxVal []byte, handle tid
 	if handle != nil {
 		rowID = handle.Encoded()
 	}
-	buf := w.kvBuffer.AllocBytes(keyAdapter.EncodedLen(idxKey, rowID))
-	key := keyAdapter.Encode(buf[:0], idxKey, rowID)
-	val := w.kvBuffer.AddBytes(idxVal)
-
-	w.writeBatch = append(w.writeBatch, common.KvPair{Key: key, Val: val})
-	if w.batchSize >= w.memSizeLimit {
+	encodedKeyLen := keyAdapter.EncodedLen(idxKey, rowID)
+	_, res, _, allocated := w.kvBuffer.Alloc(encodedKeyLen + len(idxVal))
+	if !allocated {
 		if err := w.flushKVs(ctx, false); err != nil {
 			return err
 		}
+		_, res, _, _ = w.kvBuffer.Alloc(encodedKeyLen + len(idxVal))
 	}
+	buf := res[:encodedKeyLen]
+	key := keyAdapter.Encode(buf[:0], idxKey, rowID)
+	val := res[encodedKeyLen:]
+	copy(val, idxVal)
+
+	w.writeBatch = append(w.writeBatch, common.KvPair{Key: key, Val: val})
 	return nil
 }
 
@@ -336,7 +340,7 @@ func (w *Writer) Close(ctx context.Context) error {
 		return errors.Errorf("writer %s has been closed", w.writerID)
 	}
 	w.closed = true
-	defer w.kvBuffer.Destroy()
+	defer w.kvBuffer.destroy()
 	err := w.flushKVs(ctx, true)
 	if err != nil {
 		return err
@@ -504,7 +508,7 @@ func (w *Writer) flushKVs(ctx context.Context, fromClose bool) (err error) {
 
 	w.writeBatch = w.writeBatch[:0]
 	w.rc.reset()
-	w.kvBuffer.Reset()
+	w.kvBuffer.reset()
 	w.batchSize = 0
 	return nil
 }
