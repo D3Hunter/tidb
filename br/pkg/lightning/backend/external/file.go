@@ -100,6 +100,9 @@ func (s *KeyValueStore) AddKeyValue(key, value []byte) error {
 
 // Close closes the KeyValueStore and append the last range property.
 func (s *KeyValueStore) Close() {
+	if _, err := s.dataWriter.Write(s.ctx, s.cacheBuffer); err != nil {
+		panic(err)
+	}
 	if s.rc.currProp.keys > 0 {
 		newProp := *s.rc.currProp
 		s.rc.props = append(s.rc.props, &newProp)
