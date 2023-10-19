@@ -324,6 +324,13 @@ func (w *Writer) WriteRow(ctx context.Context, idxKey, idxVal []byte, handle tid
 	copy(val, idxVal)
 
 	w.writeBatch = append(w.writeBatch, common.KvPair{Key: key, Val: val})
+	// without this check, tidb oom directly, too many memory used by byte slice.
+	if w.batchSize+uint64(len(w.writeBatch)*2*24) > w.memSizeLimit {
+		if err := w.flushKVs(ctx, false); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
