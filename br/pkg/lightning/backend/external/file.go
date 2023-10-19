@@ -25,9 +25,10 @@ import (
 type KeyValueStore struct {
 	dataWriter storage.ExternalFileWriter
 
-	rc     *rangePropertiesCollector
-	ctx    context.Context
-	offset uint64
+	rc          *rangePropertiesCollector
+	ctx         context.Context
+	offset      uint64
+	cacheBuffer []byte
 }
 
 // NewKeyValueStore creates a new KeyValueStore. The data will be written to the
@@ -39,9 +40,10 @@ func NewKeyValueStore(
 	rangePropertiesCollector *rangePropertiesCollector,
 ) (*KeyValueStore, error) {
 	kvStore := &KeyValueStore{
-		dataWriter: dataWriter,
-		ctx:        ctx,
-		rc:         rangePropertiesCollector,
+		dataWriter:  dataWriter,
+		ctx:         ctx,
+		rc:          rangePropertiesCollector,
+		cacheBuffer: make([]byte, 0, 8*1024*1024),
 	}
 	return kvStore, nil
 }
@@ -57,32 +59,21 @@ func (s *KeyValueStore) AddKeyValue(key, value []byte) error {
 	)
 
 	// data layout: keyLen + key + valueLen + value
-	n, err := s.dataWriter.Write(
-		s.ctx,
-		binary.BigEndian.AppendUint64(b[:0], uint64(len(key))),
-	)
-	if err != nil {
-		return err
+	s.cacheBuffer = append(s.cacheBuffer, binary.BigEndian.AppendUint64(b[:0], uint64(len(key)))...)
+	kvLen += 8
+	s.cacheBuffer = append(s.cacheBuffer, key...)
+	kvLen += len(key)
+	s.cacheBuffer = append(s.cacheBuffer, binary.BigEndian.AppendUint64(b[:0], uint64(len(value)))...)
+	kvLen += 8
+	s.cacheBuffer = append(s.cacheBuffer, value...)
+	kvLen += len(value)
+
+	if len(s.cacheBuffer) >= 5*1024*1024 {
+		if _, err := s.dataWriter.Write(s.ctx, s.cacheBuffer); err != nil {
+			return err
+		}
+		s.cacheBuffer = s.cacheBuffer[:0]
 	}
-	kvLen += n
-	n, err = s.dataWriter.Write(s.ctx, key)
-	if err != nil {
-		return err
-	}
-	kvLen += n
-	n, err = s.dataWriter.Write(
-		s.ctx,
-		binary.BigEndian.AppendUint64(b[:0], uint64(len(value))),
-	)
-	if err != nil {
-		return err
-	}
-	kvLen += n
-	n, err = s.dataWriter.Write(s.ctx, value)
-	if err != nil {
-		return err
-	}
-	kvLen += n
 
 	if len(s.rc.currProp.firstKey) == 0 {
 		s.rc.currProp.firstKey = key
