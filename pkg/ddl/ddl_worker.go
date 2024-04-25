@@ -402,10 +402,12 @@ func (d *ddl) addBatchDDLJobs(tasks []*limitJobTask) error {
 		return errors.Trace(err)
 	}
 	defer d.sessPool.Put(se)
+	st1 := time.Now()
 	job, err := getJobsBySQL(sess.NewSession(se), JobTable, fmt.Sprintf("type = %d", model.ActionFlashbackCluster))
 	if err != nil {
 		return errors.Trace(err)
 	}
+	logutil.BgLogger().Info("check flash back cluster job cost", zap.Duration("total cost time", time.Since(st1)))
 	if len(job) != 0 {
 		return errors.Errorf("Can't add ddl job, have flashback cluster job")
 	}
@@ -421,6 +423,7 @@ func (d *ddl) addBatchDDLJobs(tasks []*limitJobTask) error {
 
 	ctx := kv.WithInternalSourceType(context.Background(), kv.InternalTxnDDL)
 	// lock to reduce conflict
+	st2 := time.Now()
 	d.globalIDLock.Lock()
 	err = kv.RunInNewTxn(ctx, d.store, true, func(_ context.Context, txn kv.Transaction) error {
 		t := meta.NewMeta(txn)
@@ -449,7 +452,8 @@ func (d *ddl) addBatchDDLJobs(tasks []*limitJobTask) error {
 	if err != nil {
 		return errors.Trace(err)
 	}
-
+	logutil.BgLogger().Info("gen global-id related cost", zap.Duration("total cost time", time.Since(st2)))
+	st3 := time.Now()
 	jobTasks := make([]*model.Job, 0, len(tasks))
 	for i, task := range tasks {
 		job := task.job
@@ -490,6 +494,7 @@ func (d *ddl) addBatchDDLJobs(tasks []*limitJobTask) error {
 		jobTasks = append(jobTasks, job)
 		injectModifyJobArgFailPoint(job)
 	}
+	logutil.BgLogger().Info("check BDR related cost", zap.Duration("total cost time", time.Since(st3)))
 
 	se.GetSessionVars().SetDiskFullOpt(kvrpcpb.DiskFullOpt_AllowedOnAlmostFull)
 
