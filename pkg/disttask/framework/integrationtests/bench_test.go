@@ -63,9 +63,11 @@ func TestQueryDDLJob(t *testing.T) {
 	require.NoError(t, err)
 
 	tk := testkit.NewTestKit(t, store)
-	st := time.Now()
-	tk.MustQuery("select job_meta from mysql.tidb_ddl_job where type = 62").Check(testkit.Rows())
-	t.Logf("query ddl job cost: %v", time.Since(st))
+	for i := 0; i < 10; i++ {
+		st := time.Now()
+		tk.MustQuery("select job_meta from mysql.tidb_ddl_job where type = 62").Check(testkit.Rows())
+		t.Logf("query ddl job cost: %v", time.Since(st))
+	}
 }
 
 // test overhead when starting multiple schedulers
