@@ -46,6 +46,28 @@ var (
 	noTask                  = flag.Bool("no-task", false, "no task")
 )
 
+func TestQueryDDLJob(t *testing.T) {
+	var d driver.TiKVDriver
+	var err error
+	store, err := d.Open("tikv://" + *testkit.WithTiKV)
+	require.NoError(t, err)
+
+	var dom *domain.Domain
+	dom, err = session.BootstrapSession(store)
+	defer func() {
+		dom.Close()
+		err := store.Close()
+		require.NoError(t, err)
+		view.Stop()
+	}()
+	require.NoError(t, err)
+
+	tk := testkit.NewTestKit(t, store)
+	st := time.Now()
+	tk.MustQuery("select job_meta from mysql.tidb_ddl_job where type = 62").Check(testkit.Rows())
+	t.Logf("query ddl job cost: %v", time.Since(st))
+}
+
 // test overhead when starting multiple schedulers
 //
 // make failpoint-enable
