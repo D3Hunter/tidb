@@ -755,6 +755,10 @@ func cleanDDLReorgHandles(se *sess.Session, job *model.Job) error {
 }
 
 func getJobsBySQL(se *sess.Session, tbl, condition string) ([]*model.Job, error) {
+	st := time.Now()
+	defer func() {
+		logutil.BgLogger().Info("getJobsBySQL cost", zap.Duration("total cost time", time.Since(st)), zap.String("cond", condition))
+	}()
 	rows, err := se.Execute(context.Background(), fmt.Sprintf("select job_meta from mysql.%s where %s", tbl, condition), "get_job")
 	if err != nil {
 		return nil, errors.Trace(err)
