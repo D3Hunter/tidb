@@ -542,6 +542,10 @@ const (
 )
 
 func insertDDLJobs2Table(se *sess.Session, updateRawArgs bool, jobs ...*model.Job) error {
+	st := time.Now()
+	defer func() {
+		logutil.BgLogger().Info("insertDDLJobs2Table cost", zap.Duration("total cost time", time.Since(st)))
+	}()
 	failpoint.Inject("mockAddBatchDDLJobsErr", func(val failpoint.Value) {
 		if val.(bool) {
 			failpoint.Return(errors.Errorf("mockAddBatchDDLJobsErr"))

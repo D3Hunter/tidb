@@ -230,6 +230,10 @@ func (d *ddl) limitDDLJobs(ch chan *limitJobTask, handler func(tasks []*limitJob
 
 // addBatchDDLJobsV1 gets global job IDs and puts the DDL jobs in the DDL queue.
 func (d *ddl) addBatchDDLJobsV1(tasks []*limitJobTask) {
+	st := time.Now()
+	defer func() {
+		logutil.BgLogger().Info("addBatchDDLJobsV1 cost", zap.Duration("total cost time", time.Since(st)))
+	}()
 	startTime := time.Now()
 	var err error
 	// DDLForce2Queue is a flag to tell DDL worker to always push the job to the DDL queue.
@@ -382,6 +386,10 @@ func setJobStateToQueueing(job *model.Job) {
 
 // addBatchDDLJobs gets global job IDs and puts the DDL jobs in the DDL job table or local worker.
 func (d *ddl) addBatchDDLJobs(tasks []*limitJobTask) error {
+	st := time.Now()
+	defer func() {
+		logutil.BgLogger().Info("addBatchDDLJobs cost", zap.Duration("total cost time", time.Since(st)))
+	}()
 	var ids []int64
 	var err error
 
