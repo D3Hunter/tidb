@@ -1139,6 +1139,10 @@ func (*ddl) shouldCheckHistoryJob(job *model.Job) bool {
 // - context.Cancel: job has been sent to worker, but not found in history DDL job before cancel
 // - other: found in history DDL job and return that job error
 func (d *ddl) DoDDLJob(ctx sessionctx.Context, job *model.Job) error {
+	st := time.Now()
+	defer func() {
+		logutil.BgLogger().Info("DoDDLJob cost", zap.Duration("total cost time", time.Since(st)))
+	}()
 	job.TraceInfo = &model.TraceInfo{
 		ConnectionID: ctx.GetSessionVars().ConnectionID,
 		SessionAlias: ctx.GetSessionVars().SessionAlias,
@@ -1151,6 +1155,7 @@ func (d *ddl) DoDDLJob(ctx sessionctx.Context, job *model.Job) error {
 	// Get a global job ID and put the DDL job in the queue.
 	setDDLJobQuery(ctx, job)
 	setDDLJobMode(job)
+	st2 := time.Now()
 	task := &limitJobTask{job, []chan error{make(chan error)}, nil}
 	d.deliverJobTask(task)
 
@@ -1172,6 +1177,7 @@ func (d *ddl) DoDDLJob(ctx sessionctx.Context, job *model.Job) error {
 		// The transaction of enqueuing job is failed.
 		return errors.Trace(err)
 	}
+	logutil.BgLogger().Info("deliverJobTask and job 2 table cost", zap.Duration("total cost time", time.Since(st2)))
 
 	sessVars := ctx.GetSessionVars()
 	sessVars.StmtCtx.IsDDLJobInQueue = true
@@ -1243,7 +1249,7 @@ func (d *ddl) DoDDLJob(ctx sessionctx.Context, job *model.Job) error {
 				}
 			}
 		}
-
+		st := time.Now()
 		se, err := d.sessPool.Get()
 		if err != nil {
 			logutil.BgLogger().Error("get session failed, check again", zap.String("category", "ddl"), zap.Error(err))
@@ -1284,6 +1290,7 @@ func (d *ddl) DoDDLJob(ctx sessionctx.Context, job *model.Job) error {
 			appendMultiChangeWarningsToOwnerCtx(ctx, historyJob)
 
 			logutil.BgLogger().Info("DDL job is finished", zap.String("category", "ddl"), zap.Int64("jobID", jobID))
+			logutil.BgLogger().Info("post DDL job", zap.Duration("total cost time", time.Since(st)))
 			return nil
 		}
 
@@ -1296,6 +1303,10 @@ func (d *ddl) DoDDLJob(ctx sessionctx.Context, job *model.Job) error {
 }
 
 func (d *ddl) callHookOnChanged(job *model.Job, err error) error {
+	st := time.Now()
+	defer func() {
+		logutil.BgLogger().Info("callHookOnChanged cost", zap.Duration("total cost time", time.Since(st)))
+	}()
 	if job.State == model.JobStateNone {
 		// We don't call the hook if the job haven't run yet.
 		return err

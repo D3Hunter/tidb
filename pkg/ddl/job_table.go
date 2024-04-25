@@ -203,7 +203,13 @@ func (d *ddl) processJobDuringUpgrade(sess *sess.Session, job *model.Job) (isRun
 	return true, nil
 }
 
-func (d *ddl) getGeneralJob(sess *sess.Session) (*model.Job, error) {
+func (d *ddl) getGeneralJob(sess *sess.Session) (job *model.Job, err error) {
+	st := time.Now()
+	defer func() {
+		if job != nil {
+			logutil.BgLogger().Info("getGeneralJob cost", zap.Duration("total cost time", time.Since(st)))
+		}
+	}()
 	return d.getJob(sess, jobTypeGeneral, func(job *model.Job) (bool, error) {
 		if !d.runningJobs.checkRunnable(job) {
 			return false, nil
@@ -479,8 +485,14 @@ func (d *ddl) delivery2Worker(wk *worker, pool *workerPool, job *model.Job) {
 			if err != nil {
 				return
 			}
+			st := time.Now()
 			cleanMDLInfo(d.sessPool, job.ID, d.etcdCli, job.State == model.JobStateSynced)
 			d.synced(job)
+			logutil.BgLogger().Info("cleanMDLInfo cost", zap.Duration("total cost time", time.Since(st)))
+			_, err = wk.HandleDDLJobTable(d.ddlCtx, job)
+			if err != nil {
+				logutil.Logger(logCtx).Info("handle ddl job failed", zap.String("category", "ddl"), zap.Error(err), zap.String("job", job.String()))
+			}
 
 			if RunInGoTest {
 				// d.mu.hook is initialed from domain / test callback, which will force the owner host update schema diff synchronously.
