@@ -489,10 +489,6 @@ func (d *ddl) delivery2Worker(wk *worker, pool *workerPool, job *model.Job) {
 			cleanMDLInfo(d.sessPool, job.ID, d.etcdCli, job.State == model.JobStateSynced)
 			d.synced(job)
 			logutil.BgLogger().Info("cleanMDLInfo cost", zap.Duration("total cost time", time.Since(st)))
-			_, err = wk.HandleDDLJobTable(d.ddlCtx, job)
-			if err != nil {
-				logutil.Logger(logCtx).Info("handle ddl job failed", zap.String("category", "ddl"), zap.Error(err), zap.String("job", job.String()))
-			}
 
 			if RunInGoTest {
 				// d.mu.hook is initialed from domain / test callback, which will force the owner host update schema diff synchronously.
@@ -542,10 +538,6 @@ const (
 )
 
 func insertDDLJobs2Table(se *sess.Session, updateRawArgs bool, jobs ...*model.Job) error {
-	st := time.Now()
-	defer func() {
-		logutil.BgLogger().Info("insertDDLJobs2Table cost", zap.Duration("total cost time", time.Since(st)))
-	}()
 	failpoint.Inject("mockAddBatchDDLJobsErr", func(val failpoint.Value) {
 		if val.(bool) {
 			failpoint.Return(errors.Errorf("mockAddBatchDDLJobsErr"))
@@ -755,10 +747,6 @@ func cleanDDLReorgHandles(se *sess.Session, job *model.Job) error {
 }
 
 func getJobsBySQL(se *sess.Session, tbl, condition string) ([]*model.Job, error) {
-	st := time.Now()
-	defer func() {
-		logutil.BgLogger().Info("getJobsBySQL cost", zap.Duration("total cost time", time.Since(st)), zap.String("cond", condition))
-	}()
 	rows, err := se.Execute(context.Background(), fmt.Sprintf("select job_meta from mysql.%s where %s", tbl, condition), "get_job")
 	if err != nil {
 		return nil, errors.Trace(err)
