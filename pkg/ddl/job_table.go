@@ -195,8 +195,7 @@ func (s *jobScheduler) getJob(se *sess.Session, tp jobType) (*model.Job, error) 
 		label = "get_job_reorg"
 	}
 	// TODO replace this sub-query with memory implementation.
-	const getJobSQL = `select job_meta, processing from mysql.tidb_ddl_job where job_id in
-		(select min(job_id) from mysql.tidb_ddl_job where job_id >= %d group by schema_ids, table_ids, processing)
+	const getJobSQL = `select job_meta, processing from mysql.tidb_ddl_job where job_id >= %d
 		and %s reorg %s order by processing desc, job_id`
 	var excludedJobIDs string
 	if ids := s.runningJobs.allIDs(); len(ids) > 0 {
