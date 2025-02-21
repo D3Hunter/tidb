@@ -16,6 +16,7 @@ package external
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"io"
 
@@ -64,7 +65,8 @@ type byteReader struct {
 		reloadCnt int
 	}
 
-	logger *zap.Logger
+	logger   *zap.Logger
+	filename string
 }
 
 func openStoreReaderAndSeek(
@@ -88,11 +90,7 @@ func openStoreReaderAndSeek(
 // newByteReader wraps readNBytes functionality to storageReader. If store and
 // filename are also given, this reader can use switchConcurrentMode to switch to
 // concurrent reading mode.
-func newByteReader(
-	ctx context.Context,
-	storageReader storage.ExternalFileReader,
-	bufSize int,
-) (r *byteReader, err error) {
+func newByteReader(ctx context.Context, filename string, storageReader storage.ExternalFileReader, bufSize int) (r *byteReader, err error) {
 	defer func() {
 		if err != nil && r != nil {
 			_ = r.Close()
@@ -103,6 +101,7 @@ func newByteReader(
 		storageReader: storageReader,
 		smallBuf:      make([]byte, bufSize),
 		curBufOffset:  0,
+		filename:      filename,
 	}
 	r.curBuf = [][]byte{r.smallBuf}
 	r.logger = logutil.Logger(r.ctx)
@@ -246,6 +245,7 @@ func (r *byteReader) readNBytes(n int) ([]byte, error) {
 			n -= len(b)
 		}
 	}
+	r.logger.Info("DATA READ", zap.String("path", r.filename), zap.String("data", hex.EncodeToString(auxBuf)))
 	return auxBuf, nil
 }
 

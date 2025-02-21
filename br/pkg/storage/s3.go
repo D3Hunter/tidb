@@ -924,7 +924,13 @@ func (r *s3ObjectReader) Read(p []byte) (n int, err error) {
 			"read s3 object failed, will retry",
 			zap.String("file", r.name),
 			zap.Int("retryCnt", retryCnt),
+			zap.Int64("range-start", r.rangeInfo.Start),
+			zap.Int64("range-end", r.rangeInfo.End),
+			zap.Int64("size", r.rangeInfo.Size),
+			zap.Int64("pos", r.pos),
+			zap.Int("len(p)", len(p)),
 			zap.Error(err),
+			zap.Stack("stack"),
 		)
 		// if can retry, reopen a new reader and try read again
 		end := r.rangeInfo.End + 1

@@ -48,7 +48,7 @@ func newKVReader(
 	if err != nil {
 		return nil, err
 	}
-	br, err := newByteReader(ctx, sr, oneThird)
+	br, err := newByteReader(ctx, name, sr, oneThird)
 	if err != nil {
 		return nil, err
 	}
@@ -72,6 +72,9 @@ func (r *kvReader) nextKV() (key, val []byte, err error) {
 	if err != nil {
 		return nil, nil, noEOF(err)
 	}
+	r.byteReader.logger.Info("read key-value pair", zap.String("path", r.byteReader.filename),
+		zap.Uint64("key-len", uint64(keyLen)),
+		zap.Uint64("val-len", uint64(valLen)))
 	return keyAndValue[:keyLen], keyAndValue[keyLen:], nil
 }
 

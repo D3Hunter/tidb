@@ -79,7 +79,7 @@ func TestByteReader(t *testing.T) {
 	}
 
 	// Test basic next() usage.
-	br, err := newByteReader(context.Background(), newRsc(), 3)
+	br, err := newByteReader(context.Background(), "", newRsc(), 3)
 	require.NoError(t, err)
 	n, bs := br.next(1)
 	require.Equal(t, 1, n)
@@ -90,7 +90,7 @@ func TestByteReader(t *testing.T) {
 	require.NoError(t, br.Close())
 
 	// Test basic readNBytes() usage.
-	br, err = newByteReader(context.Background(), newRsc(), 3)
+	br, err = newByteReader(context.Background(), "", newRsc(), 3)
 	require.NoError(t, err)
 	x, err := br.readNBytes(2)
 	require.NoError(t, err)
@@ -99,7 +99,7 @@ func TestByteReader(t *testing.T) {
 	require.Equal(t, byte('b'), x[1])
 	require.NoError(t, br.Close())
 
-	br, err = newByteReader(context.Background(), newRsc(), 3)
+	br, err = newByteReader(context.Background(), "", newRsc(), 3)
 	require.NoError(t, err)
 	x, err = br.readNBytes(5) // Read all the data.
 	require.NoError(t, err)
@@ -109,7 +109,7 @@ func TestByteReader(t *testing.T) {
 	require.ErrorIs(t, err, io.EOF)
 	require.NoError(t, br.Close())
 
-	br, err = newByteReader(context.Background(), newRsc(), 3)
+	br, err = newByteReader(context.Background(), "", newRsc(), 3)
 	require.NoError(t, err)
 	_, err = br.readNBytes(7) // EOF
 	require.ErrorIs(t, err, io.ErrUnexpectedEOF)
@@ -118,7 +118,7 @@ func TestByteReader(t *testing.T) {
 	require.NoError(t, err)
 
 	ms := &mockExtStore{src: []byte("abcdef")}
-	br, err = newByteReader(context.Background(), ms, 2)
+	br, err = newByteReader(context.Background(), "", ms, 2)
 	require.NoError(t, err)
 	x, err = br.readNBytes(3)
 	require.NoError(t, err)
@@ -129,7 +129,7 @@ func TestByteReader(t *testing.T) {
 	require.NoError(t, br.Close())
 
 	ms = &mockExtStore{src: []byte("abcdef")}
-	br, err = newByteReader(context.Background(), ms, 2)
+	br, err = newByteReader(context.Background(), "", ms, 2)
 	require.NoError(t, err)
 	x, err = br.readNBytes(2)
 	require.NoError(t, err)
@@ -142,7 +142,7 @@ func TestByteReader(t *testing.T) {
 
 func TestByteReaderAuxBuf(t *testing.T) {
 	ms := &mockExtStore{src: []byte("0123456789")}
-	br, err := newByteReader(context.Background(), ms, 1)
+	br, err := newByteReader(context.Background(), "", ms, 1)
 	require.NoError(t, err)
 	y1, err := br.readNBytes(1)
 	require.NoError(t, err)
@@ -175,12 +175,12 @@ func TestUnexpectedEOF(t *testing.T) {
 		return rsc
 	}
 
-	br, err := newByteReader(context.Background(), newRsc(), 3)
+	br, err := newByteReader(context.Background(), "", newRsc(), 3)
 	require.NoError(t, err)
 	_, err = br.readNBytes(100)
 	require.ErrorIs(t, err, io.ErrUnexpectedEOF)
 
-	br, err = newByteReader(context.Background(), newRsc(), 3)
+	br, err = newByteReader(context.Background(), "", newRsc(), 3)
 	require.NoError(t, err)
 	_, err = br.readNBytes(100)
 	require.ErrorIs(t, err, io.ErrUnexpectedEOF)
@@ -188,7 +188,7 @@ func TestUnexpectedEOF(t *testing.T) {
 
 func TestEmptyContent(t *testing.T) {
 	ms := &mockExtStore{src: []byte{}}
-	_, err := newByteReader(context.Background(), ms, 100)
+	_, err := newByteReader(context.Background(), "", ms, 100)
 	require.Equal(t, io.EOF, err)
 
 	st, clean := NewS3WithBucketAndPrefix(t, "test", "testprefix")
@@ -203,7 +203,7 @@ func TestEmptyContent(t *testing.T) {
 		require.NoError(t, err)
 		return rsc
 	}
-	_, err = newByteReader(context.Background(), newRsc(), 100)
+	_, err = newByteReader(context.Background(), "", newRsc(), 100)
 	require.Equal(t, io.EOF, err)
 }
 
