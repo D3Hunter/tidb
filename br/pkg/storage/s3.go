@@ -5,6 +5,7 @@ package storage
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net/url"
@@ -951,6 +952,9 @@ func (r *s3ObjectReader) Read(p []byte) (n int, err error) {
 		}
 		retryCnt++
 		n, err = r.reader.Read(p[:maxCnt])
+	}
+	if err == nil {
+		log.L().Info("READ S3", zap.String("path", r.name), zap.String("data", hex.EncodeToString(p[:n])))
 	}
 
 	r.pos += int64(n)
