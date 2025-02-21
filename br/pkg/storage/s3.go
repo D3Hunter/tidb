@@ -930,6 +930,7 @@ func (r *s3ObjectReader) Read(p []byte) (n int, err error) {
 			zap.Int64("pos", r.pos),
 			zap.Int("len(p)", len(p)),
 			zap.Error(err),
+			zap.Any("reader", r.reader),
 			zap.Stack("stack"),
 		)
 		// if can retry, reopen a new reader and try read again

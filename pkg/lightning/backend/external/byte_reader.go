@@ -216,6 +216,7 @@ func (r *byteReader) readNBytes(n int) ([]byte, error) {
 
 	readLen, bs := r.next(n)
 	if readLen == n && len(bs) == 1 {
+		r.logger.Info("DATA READ", zap.String("path", r.filename), zap.String("data", hex.EncodeToString(bs[0])))
 		return bs[0], nil
 	}
 	// need to flatten bs
