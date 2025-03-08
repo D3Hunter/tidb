@@ -112,6 +112,8 @@ type Engine struct {
 	db           atomic.Pointer[pebble.DB]
 	UUID         uuid.UUID
 	localWriters sync.Map
+	snapshot     *pebble.Snapshot
+	snapshotOnce sync.Once
 
 	regionSplitSize      int64
 	regionSplitKeyCnt    int64
@@ -1012,8 +1014,12 @@ func (e *Engine) newKVIter(ctx context.Context, opts *pebble.IterOptions, buf *m
 		zap.String("table", common.UniqueTable(e.tableInfo.DB, e.tableInfo.Name)),
 		zap.Int64("tableID", e.tableInfo.ID),
 		zap.Stringer("engineUUID", e.UUID))
+	e.snapshotOnce.Do(func() {
+		e.snapshot = e.getDB().NewSnapshot()
+	})
 	return newDupDetectIter(
 		e.getDB(),
+		e.snapshot,
 		e.keyAdapter,
 		opts,
 		e.duplicateDB,

@@ -131,7 +131,7 @@ func TestDupDetectIterator(t *testing.T) {
 	require.NoError(t, err)
 	pool := membuf.NewPool()
 	defer pool.Destroy()
-	iter := newDupDetectIter(db, keyAdapter, &pebble.IterOptions{}, dupDB, log.L(), common.DupDetectOpt{}, pool.NewBuffer())
+	iter := newDupDetectIter(db, nil, keyAdapter, &pebble.IterOptions{}, dupDB, log.L(), common.DupDetectOpt{}, pool.NewBuffer())
 	sort.Slice(pairs, func(i, j int) bool {
 		key1 := keyAdapter.Encode(nil, pairs[i].Key, pairs[i].RowID)
 		key2 := keyAdapter.Encode(nil, pairs[j].Key, pairs[j].RowID)
@@ -224,15 +224,7 @@ func BenchmarkDupDetectIter(b *testing.B) {
 	dupDB, _ := pebble.Open(filepath.Join(b.TempDir(), "dup"), &pebble.Options{})
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		iter := newDupDetectIter(
-			db,
-			keyAdapter,
-			&pebble.IterOptions{},
-			dupDB,
-			log.L(),
-			common.DupDetectOpt{},
-			pool.NewBuffer(),
-		)
+		iter := newDupDetectIter(db, nil, keyAdapter, &pebble.IterOptions{}, dupDB, log.L(), common.DupDetectOpt{}, pool.NewBuffer())
 		keyCnt := 0
 		for iter.First(); iter.Valid(); iter.Next() {
 			keyCnt++

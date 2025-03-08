@@ -146,15 +146,7 @@ func (d *dupDetectIter) ReleaseBuf() {
 
 var _ IngestLocalEngineIter = &dupDetectIter{}
 
-func newDupDetectIter(
-	db *pebble.DB,
-	keyAdapter common.KeyAdapter,
-	opts *pebble.IterOptions,
-	dupDB *pebble.DB,
-	logger log.Logger,
-	dupOpt common.DupDetectOpt,
-	buf *membuf.Buffer,
-) *dupDetectIter {
+func newDupDetectIter(db *pebble.DB, snapshot *pebble.Snapshot, keyAdapter common.KeyAdapter, opts *pebble.IterOptions, dupDB *pebble.DB, logger log.Logger, dupOpt common.DupDetectOpt, buf *membuf.Buffer) *dupDetectIter {
 	newOpts := &pebble.IterOptions{TableFilter: opts.TableFilter}
 	if len(opts.LowerBound) > 0 {
 		newOpts.LowerBound = keyAdapter.Encode(nil, opts.LowerBound, common.MinRowID)
@@ -164,7 +156,7 @@ func newDupDetectIter(
 	}
 
 	detector := common.NewDupDetector(keyAdapter, dupDB.NewBatch(), logger, dupOpt)
-	iter, err := db.NewIter(newOpts)
+	iter, err := snapshot.NewIter(newOpts)
 	if err != nil {
 		panic("fail to create iterator")
 	}
