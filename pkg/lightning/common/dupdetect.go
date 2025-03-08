@@ -16,6 +16,10 @@ package common
 
 import (
 	"bytes"
+	"fmt"
+	"os"
+	"runtime/pprof"
+	"time"
 
 	"github.com/cockroachdb/pebble"
 	"github.com/pingcap/tidb/br/pkg/logutil"
@@ -129,11 +133,29 @@ func (d *DupDetector) record(rawKey, key, val []byte) error {
 }
 
 func (d *DupDetector) flush() error {
+	filename := fmt.Sprintf("b-%d.pprof", time.Now().UnixNano())
+	file, err := os.Create(filename)
+	if err != nil {
+		panic(err)
+	}
+	err = pprof.WriteHeapProfile(file)
+	if err != nil {
+		panic(err)
+	}
 	if err := d.dupDBWriteBatch.Commit(pebble.Sync); err != nil {
 		return err
 	}
 	d.dupDBWriteBatch.Reset()
 	d.curBatchSize = 0
+	filename = fmt.Sprintf("a-%d.pprof", time.Now().UnixNano())
+	file, err = os.Create(filename)
+	if err != nil {
+		panic(err)
+	}
+	err = pprof.WriteHeapProfile(file)
+	if err != nil {
+		panic(err)
+	}
 	return nil
 }
 
