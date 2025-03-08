@@ -20,6 +20,8 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
+	"runtime/pprof"
 	"strings"
 	"sync"
 	"time"
@@ -158,6 +160,16 @@ func newRegionJob(
 		zap.Binary("regionStart", region.Region.GetStartKey()),
 		zap.Binary("regionEnd", region.Region.GetEndKey()),
 		zap.Reflect("peers", region.Region.GetPeers()))
+
+	filename := fmt.Sprintf("n-%d.pprof", time.Now().UnixNano())
+	file, err := os.Create(filename)
+	if err != nil {
+		panic(err)
+	}
+	err = pprof.WriteHeapProfile(file)
+	if err != nil {
+		panic(err)
+	}
 	return &regionJob{
 		keyRange:        common.Range{Start: jobStart, End: jobEnd},
 		region:          region,

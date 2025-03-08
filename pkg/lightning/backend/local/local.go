@@ -19,10 +19,13 @@ import (
 	"context"
 	"database/sql"
 	"encoding/hex"
+	"fmt"
 	"io"
 	"math"
 	"net"
+	"os"
 	"path/filepath"
+	"runtime/pprof"
 	"strings"
 	"sync"
 	"time"
@@ -1061,6 +1064,15 @@ func (local *Backend) generateJobForRange(
 		zap.String("startKeyOfFirstRegion", hex.EncodeToString(regions[0].Region.GetStartKey())),
 		zap.String("endKeyOfLastRegion", hex.EncodeToString(regions[len(regions)-1].Region.GetEndKey())),
 	)
+	filename := fmt.Sprintf("l-%d.pprof", time.Now().UnixNano())
+	file, err := os.Create(filename)
+	if err != nil {
+		panic(err)
+	}
+	err = pprof.WriteHeapProfile(file)
+	if err != nil {
+		panic(err)
+	}
 	return jobs, nil
 }
 
