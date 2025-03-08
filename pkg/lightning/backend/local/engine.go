@@ -1016,9 +1016,6 @@ func (e *Engine) newKVIter(ctx context.Context, opts *pebble.IterOptions, buf *m
 		zap.Stringer("engineUUID", e.UUID))
 	e.snapshotOnce.Do(func() {
 		fmt.Printf("%+v\n", e.getDB().Metrics())
-		if err := e.getDB().Compact([]byte{0}, []byte{255}, true); err != nil {
-			panic(err)
-		}
 		e.snapshot = e.getDB().NewSnapshot()
 	})
 	return newDupDetectIter(
