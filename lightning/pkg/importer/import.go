@@ -2254,9 +2254,9 @@ func (rc *Controller) DataCheck(ctx context.Context) error {
 		}
 	}
 
-	if err := rc.checkCheckpoints(ctx); err != nil {
-		return errors.Trace(err)
-	}
+	//if err := rc.checkCheckpoints(ctx); err != nil {
+	//	return errors.Trace(err)
+	//}
 
 	if rc.cfg.App.CheckRequirements {
 		if err := rc.checkSourceSchema(ctx); err != nil {
