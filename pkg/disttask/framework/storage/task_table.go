@@ -140,7 +140,7 @@ func (stm *TaskManager) WithNewSession(fn func(se sessionctx.Context) error) err
 	if err != nil {
 		return err
 	}
-	defer stm.sePool.Put(se)
+	//defer stm.sePool.Put(se)
 	return fn(se.(sessionctx.Context))
 }
 
