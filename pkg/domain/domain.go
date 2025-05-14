@@ -1574,12 +1574,7 @@ func newSessionPool(capacity int, factory pools.Factory) *sessionPool {
 }
 
 func (p *sessionPool) Get() (resource pools.Resource, err error) {
-	var ok bool
 	select {
-	case resource, ok = <-p.resources:
-		if !ok {
-			err = errors.New("session pool closed")
-		}
 	default:
 		resource, err = p.factory()
 	}
