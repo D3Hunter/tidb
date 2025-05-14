@@ -1607,7 +1607,6 @@ func (p *sessionPool) Put(resource pools.Resource) {
 	}
 
 	select {
-	case p.resources <- resource:
 	default:
 		resource.Close()
 	}

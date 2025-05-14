@@ -37,7 +37,7 @@ import (
 var (
 	schedulerPoolSize int32 = 4
 	// same as dispatcher
-	checkTime           = 300 * time.Millisecond
+	checkTime           = 50 * time.Millisecond
 	recoverMetaInterval = 90 * time.Second
 	retrySQLTimes       = 30
 	retrySQLInterval    = 500 * time.Millisecond
