@@ -481,6 +481,19 @@ func (local *Backend) doWrite(ctx context.Context, j *regionJob) error {
 	return nil
 }
 
+func (local *Backend) runIngest(ctx context.Context, job *regionJob) error {
+	if limiter := local.ingestLimiter.Load(); limiter != nil {
+		err := limiter.(*ingestLimiter).Acquire()
+		if err != nil {
+			return err
+		}
+		err = local.ingest(ctx, job)
+		limiter.(*ingestLimiter).Release()
+		return err
+	}
+	return local.ingest(ctx, job)
+}
+
 // ingest tries to finish the regionJob.
 // if any ingest logic has error, ingest may retry sometimes to resolve it and finally
 // set job to a proper stage with nil error returned.

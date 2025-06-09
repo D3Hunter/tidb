@@ -79,6 +79,10 @@ var (
 	mPolicyMagicByte     = CurrentMagicByteVer
 	mDDLTableVersion     = []byte("DDLTableVersion")
 	mMetaDataLock        = []byte("metadataLock")
+
+	mIngestMaxBatchSplitRangesKey = []byte("IngestMaxBatchSplitRanges")
+	mIngestMaxReqPerSecondKey     = []byte("IngestMaxReqPerSecond")
+	mIngestMaxReqConcurrencyKey   = []byte("IngestMaxReqConcurrency")
 	// the id for 'default' group, the internal ddl can ensure
 	// user created resource group won't duplicate with this id.
 	defaultGroupID = int64(1)
@@ -1357,6 +1361,60 @@ func (m *Meta) GetHistoryDDLJobsIterator(startJobID int64) (LastJobIterator, err
 	return &HLastJobIterator{
 		iter: iter,
 	}, nil
+}
+
+// SetIngestMaxBatchSplitRanges sets the ingest max_batch_split_ranges.
+func (m *Meta) SetIngestMaxBatchSplitRanges(val int) error {
+	return errors.Trace(m.txn.Set(mIngestMaxBatchSplitRangesKey, []byte(strconv.Itoa(val))))
+}
+
+// GetIngestMaxBatchSplitRanges gets the ingest max_batch_split_ranges.
+func (m *Meta) GetIngestMaxBatchSplitRanges() (val int, isNull bool, err error) {
+	sVal, err := m.txn.Get(mIngestMaxBatchSplitRangesKey)
+	if err != nil {
+		return 0, false, errors.Trace(err)
+	}
+	if sVal == nil {
+		return 0, true, nil
+	}
+	val, err = strconv.Atoi(string(sVal))
+	return val, false, errors.Trace(err)
+}
+
+// SetIngestMaxReqPerSecond sets the max_ingest_req_per_second.
+func (m *Meta) SetIngestMaxReqPerSecond(val int) error {
+	return errors.Trace(m.txn.Set(mIngestMaxReqPerSecondKey, []byte(strconv.Itoa(val))))
+}
+
+// GetIngestMaxReqPerSecond gets the max_ingest_req_per_second.
+func (m *Meta) GetIngestMaxReqPerSecond() (val int, isNull bool, err error) {
+	sVal, err := m.txn.Get(mIngestMaxReqPerSecondKey)
+	if err != nil {
+		return 0, false, errors.Trace(err)
+	}
+	if sVal == nil {
+		return 0, true, nil
+	}
+	val, err = strconv.Atoi(string(sVal))
+	return val, false, errors.Trace(err)
+}
+
+// SetIngestMaxConcurrency sets the max_ingest_concurrency.
+func (m *Meta) SetIngestMaxConcurrency(val int) error {
+	return errors.Trace(m.txn.Set(mIngestMaxReqConcurrencyKey, []byte(strconv.Itoa(val))))
+}
+
+// GetIngestMaxConcurrency gets the max_ingest_concurrency.
+func (m *Meta) GetIngestMaxConcurrency() (val int, isNull bool, err error) {
+	sVal, err := m.txn.Get(mIngestMaxReqConcurrencyKey)
+	if err != nil {
+		return 0, false, errors.Trace(err)
+	}
+	if sVal == nil {
+		return 0, true, nil
+	}
+	val, err = strconv.Atoi(string(sVal))
+	return val, false, errors.Trace(err)
 }
 
 // HLastJobIterator is the iterator for gets the latest history.

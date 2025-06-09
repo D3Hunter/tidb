@@ -55,6 +55,7 @@ import (
 	"github.com/pingcap/tidb/br/pkg/storage"
 	"github.com/pingcap/tidb/br/pkg/version"
 	"github.com/pingcap/tidb/pkg/infoschema"
+	"github.com/pingcap/tidb/pkg/meta"
 	"github.com/pingcap/tidb/pkg/metrics"
 	"github.com/pingcap/tidb/pkg/parser/model"
 	"github.com/pingcap/tidb/pkg/store/pdtypes"
@@ -87,9 +88,6 @@ const (
 	gRPCKeepAliveTimeout = 5 * time.Minute
 	gRPCBackOffMaxDelay  = 10 * time.Minute
 
-	// The max ranges count in a batch to split and scatter.
-	maxBatchSplitRanges = 4096
-
 	propRangeIndex = "tikv.range_index"
 
 	defaultPropSizeIndexDistance = 4 * units.MiB
@@ -119,9 +117,94 @@ var (
 	// A large retry times is for tolerating tikv cluster failures.
 	MaxWriteAndIngestRetryTimes = 30
 
+	// defaultMaxBatchSplitRanges is the default max ranges count in a batch to split and scatter.
+	defaultMaxBatchSplitRanges  = 4096
+	defaultMaxIngestReqPerSec   = 5
+	defaultMaxIngestConcurrency = 5
+
 	// Unlimited RPC receive message size for TiKV importer
 	unlimitedRPCRecvMsgSize = math.MaxInt32
 )
+
+var (
+	// CurrentMaxBatchSplitRanges stores the current limit for batch split ranges.
+	CurrentMaxBatchSplitRanges atomic.Int64
+	// CurrentMaxIngestReqPerSec stores the current limit for ingest requests per second.
+	CurrentMaxIngestReqPerSec atomic.Int64
+	// CurrentMaxIngestConcurrency stores the current limit for concurrent ingest requests.
+	CurrentMaxIngestConcurrency atomic.Int64
+)
+
+// InitializeGlobalMaxBatchSplitRanges loads the maxBatchSplitRanges value using meta.Meta or sets a default.
+func InitializeGlobalMaxBatchSplitRanges(m *meta.Meta, logger *zap.Logger) error {
+	valInt, isNull, err := m.GetIngestMaxBatchSplitRanges()
+	if err != nil {
+		return errors.Annotate(err, "failed to read maxBatchSplitRanges from meta store")
+	}
+	if isNull || valInt <= 0 {
+		valInt = defaultMaxBatchSplitRanges
+		logger.Info("maxBatchSplitRanges not found in meta store, initialized to default and persisted",
+			zap.Int("value", defaultMaxBatchSplitRanges))
+	} else {
+		logger.Info("loaded maxBatchSplitRanges from meta store", zap.Int("value", valInt))
+	}
+	CurrentMaxBatchSplitRanges.Store(int64(valInt))
+
+	valInt, isNull, err = m.GetIngestMaxReqPerSecond()
+	if err != nil {
+		return errors.Annotate(err, "failed to read maxIngestReqPerSec from meta store")
+	}
+	if isNull || valInt <= 0 {
+		valInt = defaultMaxIngestReqPerSec
+		logger.Info("maxIngestReqPerSec not found in meta store, initialized to default and persisted",
+			zap.Int("value", defaultMaxIngestReqPerSec))
+	} else {
+		logger.Info("loaded maxIngestReqPerSec from meta store", zap.Int("value", valInt))
+	}
+	CurrentMaxIngestReqPerSec.Store(int64(valInt))
+
+	valInt, isNull, err = m.GetIngestMaxConcurrency()
+	if err != nil {
+		return errors.Annotate(err, "failed to read maxIngestReqConcurrency from meta store")
+	}
+	if isNull || valInt <= 0 {
+		valInt = defaultMaxIngestConcurrency
+		logger.Info("maxIngestReqConcurrency not found in meta store, initialized to default and persisted",
+
+			zap.Int("value", defaultMaxIngestConcurrency))
+	} else {
+		logger.Info("loaded maxIngestReqConcurrency from meta store", zap.Int("value", valInt))
+	}
+	CurrentMaxIngestConcurrency.Store(int64(valInt))
+	return nil
+}
+
+// GetMaxBatchSplitRanges returns the current maximum number of ranges in a batch to split and scatter.
+func GetMaxBatchSplitRanges() int {
+	val := CurrentMaxBatchSplitRanges.Load()
+	if val == 0 { // Not yet initialized from TiKV or invalid value caused fallback to 0
+		return defaultMaxBatchSplitRanges
+	}
+	return int(val)
+}
+
+// GetMaxIngestReqPerSec returns the current maximum number of ingest requests per second.
+func GetMaxIngestReqPerSec() int {
+	val := CurrentMaxIngestReqPerSec.Load()
+	if val == 0 {
+		return defaultMaxIngestReqPerSec
+	}
+	return int(val)
+}
+
+// GestMaxIngestConcurrency returns the current maximum number of concurrent ingest requests.
+func GestMaxIngestConcurrency() int {
+	val := CurrentMaxIngestConcurrency.Load()
+	if val == 0 {
+		return defaultMaxIngestConcurrency
+	}
+	return int(val)
+}
 
 // ImportClientFactory is factory to create new import client for specific store.
 type ImportClientFactory interface {
@@ -484,6 +567,7 @@ type Backend struct {
 	tls              *common.TLS
 	regionSizeGetter TableRegionSizeGetter
 	tikvCodec        tikvclient.Codec
+	ingestLimiter    atomic.Value // *ingestLimiter
 
 	BackendConfig
 
@@ -1198,7 +1282,7 @@ func (local *Backend) prepareAndSendJob(
 			failpoint.Break()
 		})
 
-		err = local.SplitAndScatterRegionInBatches(ctx, initialSplitRanges, needSplit, maxBatchSplitRanges)
+		err = local.SplitAndScatterRegionInBatches(ctx, initialSplitRanges, needSplit, GetMaxBatchSplitRanges())
 		if err == nil || common.IsContextCanceledError(err) {
 			break
 		}
@@ -1518,7 +1602,7 @@ func (local *Backend) executeJob(
 			return nil
 		}
 
-		err = local.ingest(ctx, job)
+		err = local.runIngest(ctx, job)
 		if err != nil {
 			if !local.isRetryableImportTiKVError(err) {
 				return err
@@ -1688,6 +1772,7 @@ func (local *Backend) doImport(ctx context.Context, engine common.Engine, region
 	})
 
 	retryer := startRegionJobRetryer(workerCtx, jobToWorkerCh, &jobWg)
+	local.ingestLimiter.Store(newIngestLimiter(workerCtx, GestMaxIngestConcurrency(), GetMaxIngestReqPerSec()))
 
 	// dispatchJobGoroutine handles processed job from worker, it will only exit
 	// when jobFromWorkerCh is closed to avoid worker is blocked on sending to
