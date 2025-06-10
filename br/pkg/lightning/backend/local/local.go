@@ -1580,6 +1580,7 @@ func (local *Backend) ImportEngine(
 	} else {
 		log.FromContext(ctx).Warn("fail to get region split keys and size", zap.Error(err))
 	}
+	regionSplitSize, regionSplitKeys = int64(config.SplitRegionSize/5), int64(config.SplitRegionKeys/5)
 
 	// split sorted file into range about regionSplitSize per file
 	regionRanges, err := readAndSplitIntoRange(ctx, e, regionSplitSize, regionSplitKeys)

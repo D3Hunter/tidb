@@ -52,9 +52,9 @@ func (e *LoadDataController) CheckRequirements(ctx context.Context, conn sqlexec
 	if err := e.checkTotalFileSize(); err != nil {
 		return err
 	}
-	if err := e.checkTableEmpty(ctx, conn); err != nil {
-		return err
-	}
+	//if err := e.checkTableEmpty(ctx, conn); err != nil {
+	//	return err
+	//}
 	if err := e.checkCDCPiTRTasks(ctx); err != nil {
 		return err
 	}
