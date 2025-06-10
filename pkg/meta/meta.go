@@ -1381,24 +1381,6 @@ func (m *Meta) GetIngestMaxBatchSplitRanges() (val int, isNull bool, err error) 
 	return val, false, errors.Trace(err)
 }
 
-// SetIngestMaxReqPerSecond sets the max_ingest_req_per_second.
-func (m *Meta) SetIngestMaxReqPerSecond(val int) error {
-	return errors.Trace(m.txn.Set(mIngestMaxReqPerSecondKey, []byte(strconv.Itoa(val))))
-}
-
-// GetIngestMaxReqPerSecond gets the max_ingest_req_per_second.
-func (m *Meta) GetIngestMaxReqPerSecond() (val int, isNull bool, err error) {
-	sVal, err := m.txn.Get(mIngestMaxReqPerSecondKey)
-	if err != nil {
-		return 0, false, errors.Trace(err)
-	}
-	if sVal == nil {
-		return 0, true, nil
-	}
-	val, err = strconv.Atoi(string(sVal))
-	return val, false, errors.Trace(err)
-}
-
 // SetIngestMaxConcurrency sets the max_ingest_concurrency.
 func (m *Meta) SetIngestMaxConcurrency(val int) error {
 	return errors.Trace(m.txn.Set(mIngestMaxReqConcurrencyKey, []byte(strconv.Itoa(val))))

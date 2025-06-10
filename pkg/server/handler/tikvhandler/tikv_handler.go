@@ -2032,7 +2032,6 @@ type IngestParam string
 
 const (
 	IngestParamMaxBatchSplitRanges IngestParam = "max_batch_split_ranges"
-	IngestParamMaxReqPerSec        IngestParam = "max_req_per_sec"
 	IngestParamMaxConcurrency      IngestParam = "max_concurrency"
 )
 
@@ -2058,13 +2057,6 @@ func (h IngestMaxBatchSplitRangesHandler) ServeHTTP(w http.ResponseWriter, req *
 		}
 		setter = func(m *meta.Meta, value int) error {
 			return m.SetIngestMaxBatchSplitRanges(value)
-		}
-	case IngestParamMaxReqPerSec:
-		getter = func(m *meta.Meta) (int, bool, error) {
-			return m.GetIngestMaxReqPerSecond()
-		}
-		setter = func(m *meta.Meta, value int) error {
-			return m.SetIngestMaxReqPerSecond(value)
 		}
 	case IngestParamMaxConcurrency:
 		getter = func(m *meta.Meta) (int, bool, error) {
@@ -2122,8 +2114,6 @@ func (h IngestMaxBatchSplitRangesHandler) ServeHTTP(w http.ResponseWriter, req *
 		switch h.param {
 		case IngestParamMaxBatchSplitRanges:
 			local.CurrentMaxBatchSplitRanges.Store(int64(newValue))
-		case IngestParamMaxReqPerSec:
-			local.CurrentMaxIngestReqPerSec.Store(int64(newValue))
 		case IngestParamMaxConcurrency:
 			local.CurrentMaxIngestConcurrency.Store(int64(newValue))
 		}

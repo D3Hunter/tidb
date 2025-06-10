@@ -119,7 +119,6 @@ var (
 
 	// defaultMaxBatchSplitRanges is the default max ranges count in a batch to split and scatter.
 	defaultMaxBatchSplitRanges  = 4096
-	defaultMaxIngestReqPerSec   = 5
 	defaultMaxIngestConcurrency = 5
 
 	// Unlimited RPC receive message size for TiKV importer
@@ -129,8 +128,6 @@ var (
 var (
 	// CurrentMaxBatchSplitRanges stores the current limit for batch split ranges.
 	CurrentMaxBatchSplitRanges atomic.Int64
-	// CurrentMaxIngestReqPerSec stores the current limit for ingest requests per second.
-	CurrentMaxIngestReqPerSec atomic.Int64
 	// CurrentMaxIngestConcurrency stores the current limit for concurrent ingest requests.
 	CurrentMaxIngestConcurrency atomic.Int64
 )
@@ -149,19 +146,6 @@ func InitializeGlobalMaxBatchSplitRanges(m *meta.Meta, logger *zap.Logger) error
 		logger.Info("loaded maxBatchSplitRanges from meta store", zap.Int("value", valInt))
 	}
 	CurrentMaxBatchSplitRanges.Store(int64(valInt))
-
-	valInt, isNull, err = m.GetIngestMaxReqPerSecond()
-	if err != nil {
-		return errors.Annotate(err, "failed to read maxIngestReqPerSec from meta store")
-	}
-	if isNull || valInt <= 0 {
-		valInt = defaultMaxIngestReqPerSec
-		logger.Info("maxIngestReqPerSec not found in meta store, initialized to default and persisted",
-			zap.Int("value", defaultMaxIngestReqPerSec))
-	} else {
-		logger.Info("loaded maxIngestReqPerSec from meta store", zap.Int("value", valInt))
-	}
-	CurrentMaxIngestReqPerSec.Store(int64(valInt))
 
 	valInt, isNull, err = m.GetIngestMaxConcurrency()
 	if err != nil {
@@ -184,15 +168,6 @@ func GetMaxBatchSplitRanges() int {
 	val := CurrentMaxBatchSplitRanges.Load()
 	if val == 0 { // Not yet initialized from TiKV or invalid value caused fallback to 0
 		return defaultMaxBatchSplitRanges
-	}
-	return int(val)
-}
-
-// GetMaxIngestReqPerSec returns the current maximum number of ingest requests per second.
-func GetMaxIngestReqPerSec() int {
-	val := CurrentMaxIngestReqPerSec.Load()
-	if val == 0 {
-		return defaultMaxIngestReqPerSec
 	}
 	return int(val)
 }
@@ -1602,7 +1577,7 @@ func (local *Backend) executeJob(
 			return nil
 		}
 
-		err = local.runIngest(ctx, job)
+		err = local.ingest(ctx, job)
 		if err != nil {
 			if !local.isRetryableImportTiKVError(err) {
 				return err
@@ -1772,7 +1747,7 @@ func (local *Backend) doImport(ctx context.Context, engine common.Engine, region
 	})
 
 	retryer := startRegionJobRetryer(workerCtx, jobToWorkerCh, &jobWg)
-	local.ingestLimiter.Store(newIngestLimiter(workerCtx, GestMaxIngestConcurrency(), GetMaxIngestReqPerSec()))
+	local.ingestLimiter.Store(newIngestLimiter(workerCtx, GestMaxIngestConcurrency()))
 
 	// dispatchJobGoroutine handles processed job from worker, it will only exit
 	// when jobFromWorkerCh is closed to avoid worker is blocked on sending to

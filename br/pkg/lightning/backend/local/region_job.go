@@ -481,19 +481,6 @@ func (local *Backend) doWrite(ctx context.Context, j *regionJob) error {
 	return nil
 }
 
-func (local *Backend) runIngest(ctx context.Context, job *regionJob) error {
-	if limiter := local.ingestLimiter.Load(); limiter != nil {
-		err := limiter.(*ingestLimiter).Acquire()
-		if err != nil {
-			return err
-		}
-		err = local.ingest(ctx, job)
-		limiter.(*ingestLimiter).Release()
-		return err
-	}
-	return local.ingest(ctx, job)
-}
-
 // ingest tries to finish the regionJob.
 // if any ingest logic has error, ingest may retry sometimes to resolve it and finally
 // set job to a proper stage with nil error returned.
@@ -605,15 +592,18 @@ func (local *Backend) doIngest(ctx context.Context, j *regionJob) (*sst.IngestRe
 		}
 	}
 
+	limiter := local.ingestLimiter.Load().(*ingestLimiter)
 	batch := 1
 	if supportMultiIngest {
 		batch = len(j.writeResult.sstMeta)
+		batch = min(batch, limiter.Burst())
 	}
 
 	var resp *sst.IngestResponse
 	for start := 0; start < len(j.writeResult.sstMeta); start += batch {
 		end := mathutil.Min(start+batch, len(j.writeResult.sstMeta))
 		ingestMetas := j.writeResult.sstMeta[start:end]
+		weight := len(ingestMetas)
 
 		log.FromContext(ctx).Debug("ingest meta", zap.Reflect("meta", ingestMetas))
 
@@ -663,6 +653,10 @@ func (local *Backend) doIngest(ctx context.Context, j *regionJob) (*sst.IngestRe
 			RequestSource: util.BuildRequestSource(true, kv.InternalTxnLightning, local.TaskType),
 		}
 
+		err = limiter.Acquire(weight)
+		if err != nil {
+			return nil, errors.Trace(err)
+		}
 		if supportMultiIngest {
 			req := &sst.MultiIngestRequest{
 				Context: reqCtx,
@@ -676,6 +670,7 @@ func (local *Backend) doIngest(ctx context.Context, j *regionJob) (*sst.IngestRe
 			}
 			resp, err = cli.Ingest(ctx, req)
 		}
+		limiter.Release(weight)
 		if resp.GetError() != nil || err != nil {
 			// remove finished sstMetas
 			j.writeResult.sstMeta = j.writeResult.sstMeta[start:]

@@ -16,8 +16,10 @@ package local
 
 import (
 	"context"
-	"fmt"
+	"math"
 
+	"github.com/pingcap/errors"
+	"golang.org/x/sync/semaphore"
 	"golang.org/x/time/rate"
 )
 
@@ -27,33 +29,41 @@ import (
 // - limit the ingest requests number per second.
 type ingestLimiter struct {
 	ctx     context.Context
-	slots   chan struct{}
+	sem     *semaphore.Weighted
 	limiter *rate.Limiter
 }
 
-func newIngestLimiter(ctx context.Context, maxWorkers, maxReqPerSec int) *ingestLimiter {
+func newIngestLimiter(ctx context.Context, n int) *ingestLimiter {
+	if n == 0 {
+		return &ingestLimiter{}
+	}
 	return &ingestLimiter{
 		ctx:     ctx,
-		slots:   make(chan struct{}, maxWorkers),
-		limiter: rate.NewLimiter(rate.Limit(maxReqPerSec), maxReqPerSec),
+		sem:     semaphore.NewWeighted(int64(n)),
+		limiter: rate.NewLimiter(rate.Limit(n), n),
 	}
 }
 
-func (l *ingestLimiter) Acquire() error {
-	if err := l.limiter.Wait(l.ctx); err != nil {
-		return fmt.Errorf("rate limiter failed: %w", err)
-	}
-	select {
-	case l.slots <- struct{}{}:
+func (l *ingestLimiter) Acquire(n int) error {
+	if l.ctx == nil {
 		return nil
-	case <-l.ctx.Done():
-		return l.ctx.Err()
 	}
+	if err := l.limiter.WaitN(l.ctx, n); err != nil {
+		return errors.Trace(err)
+	}
+	return l.sem.Acquire(l.ctx, int64(n))
 }
 
-func (l *ingestLimiter) Release() {
-	select {
-	case <-l.slots:
-	default:
+func (l *ingestLimiter) Release(n int) {
+	if l.ctx == nil {
+		return
 	}
+	l.sem.Release(int64(n))
+}
+
+func (l *ingestLimiter) Burst() int {
+	if l.ctx == nil {
+		return math.MaxInt
+	}
+	return l.limiter.Burst()
 }

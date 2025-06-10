@@ -120,10 +120,10 @@ func TestDoneWithCanceledContext(t *testing.T) {
 	l := newIngestLimiter(ctx, 1, 10)
 
 	require.NoError(t, l.Acquire())
-	require.Len(t, l.slots, 1)
+	require.Len(t, l.sem, 1)
 
 	cancel()
 	l.Release()
 
-	require.Len(t, l.slots, 0, "slot should not be released")
+	require.Len(t, l.sem, 0, "slot should not be released")
 }
