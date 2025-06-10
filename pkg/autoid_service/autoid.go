@@ -337,7 +337,11 @@ func newWithCli(selfAddr string, cli *clientv3.Client, store kv.Storage) *Servic
 
 		if err := kv.RunInNewTxn(context.Background(), store, true, func(_ context.Context, txn kv.Transaction) error {
 			m := meta.NewMeta(txn)
-			return local.InitializeGlobalMaxBatchSplitRanges(m, logutil.BgLogger())
+			err := local.InitializeGlobalMaxBatchSplitRanges(m, logutil.BgLogger())
+			if err != nil {
+				return err
+			}
+			return local.InitializeGlobalIngestConcurrency(m, logutil.BgLogger())
 		}); err != nil {
 			logutil.BgLogger().Error("initialize global max batch split ranges failed", zap.Error(err))
 		}

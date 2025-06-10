@@ -2035,19 +2035,19 @@ const (
 	IngestParamMaxConcurrency      IngestParam = "max_concurrency"
 )
 
-// IngestMaxBatchSplitRangesHandler is the handler for lightning max_batch_split_ranges.
-type IngestMaxBatchSplitRangesHandler struct {
+// IngestConcurrencyHandler is the handler for lightning max_batch_split_ranges and max_concurrency.
+type IngestConcurrencyHandler struct {
 	*handler.TikvHandlerTool
 	param IngestParam
 }
 
-// NewIngestMaxBatchSplitRangesHandler creates a new IngestMaxBatchSplitRangesHandler.
-func NewIngestMaxBatchSplitRangesHandler(tool *handler.TikvHandlerTool, param IngestParam) IngestMaxBatchSplitRangesHandler {
-	return IngestMaxBatchSplitRangesHandler{tool, param}
+// NewIngestConcurrencyHandler creates a new IngestConcurrencyHandler.
+func NewIngestConcurrencyHandler(tool *handler.TikvHandlerTool, param IngestParam) IngestConcurrencyHandler {
+	return IngestConcurrencyHandler{tool, param}
 }
 
 // ServeHTTP handles request of lightning max_batch_split_ranges.
-func (h IngestMaxBatchSplitRangesHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+func (h IngestConcurrencyHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	var getter func(*meta.Meta) (int, bool, error)
 	var setter func(*meta.Meta, int) error
 	switch h.param {

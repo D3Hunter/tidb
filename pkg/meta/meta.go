@@ -81,7 +81,6 @@ var (
 	mMetaDataLock        = []byte("metadataLock")
 
 	mIngestMaxBatchSplitRangesKey = []byte("IngestMaxBatchSplitRanges")
-	mIngestMaxReqPerSecondKey     = []byte("IngestMaxReqPerSecond")
 	mIngestMaxReqConcurrencyKey   = []byte("IngestMaxReqConcurrency")
 	// the id for 'default' group, the internal ddl can ensure
 	// user created resource group won't duplicate with this id.

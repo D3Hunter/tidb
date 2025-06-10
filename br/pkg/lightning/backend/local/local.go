@@ -146,18 +146,22 @@ func InitializeGlobalMaxBatchSplitRanges(m *meta.Meta, logger *zap.Logger) error
 		logger.Info("loaded maxBatchSplitRanges from meta store", zap.Int("value", valInt))
 	}
 	CurrentMaxBatchSplitRanges.Store(int64(valInt))
+	return nil
+}
 
-	valInt, isNull, err = m.GetIngestMaxConcurrency()
+// InitializeGlobalIngestConcurrency loads the maxIngestConcurrency value using meta.Meta or sets a default.
+func InitializeGlobalIngestConcurrency(m *meta.Meta, logger *zap.Logger) error {
+	valInt, isNull, err := m.GetIngestMaxConcurrency()
 	if err != nil {
-		return errors.Annotate(err, "failed to read maxIngestReqConcurrency from meta store")
+		return errors.Annotate(err, "failed to read maxIngestConcurrency from meta store")
 	}
 	if isNull || valInt <= 0 {
 		valInt = defaultMaxIngestConcurrency
-		logger.Info("maxIngestReqConcurrency not found in meta store, initialized to default and persisted",
+		logger.Info("maxIngestConcurrency not found in meta store, initialized to default and persisted",
 
 			zap.Int("value", defaultMaxIngestConcurrency))
 	} else {
-		logger.Info("loaded maxIngestReqConcurrency from meta store", zap.Int("value", valInt))
+		logger.Info("loaded maxIngestConcurrency from meta store", zap.Int("value", valInt))
 	}
 	CurrentMaxIngestConcurrency.Store(int64(valInt))
 	return nil

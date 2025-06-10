@@ -258,9 +258,9 @@ func (s *Server) startHTTPServer() {
 	router.Handle("/upgrade/{op}", handler.NewClusterUpgradeHandler(tikvHandlerTool.Store.(kv.Storage))).Name("upgrade operations")
 
 	// HTTP path for ingest configurations
-	router.Handle("/ingest/max-batch-split-ranges", tikvhandler.NewIngestMaxBatchSplitRangesHandler(
+	router.Handle("/ingest/max-batch-split-ranges", tikvhandler.NewIngestConcurrencyHandler(
 		tikvHandlerTool, tikvhandler.IngestParamMaxBatchSplitRanges)).Name("IngestMaxBatchSplitRanges")
-	router.Handle("/ingest/max-ingest-concurrency", tikvhandler.NewIngestMaxBatchSplitRangesHandler(
+	router.Handle("/ingest/max-ingest-concurrency", tikvhandler.NewIngestConcurrencyHandler(
 		tikvHandlerTool, tikvhandler.IngestParamMaxConcurrency)).Name("IngestMaxConcurrency")
 
 	if s.cfg.Store == "tikv" {
