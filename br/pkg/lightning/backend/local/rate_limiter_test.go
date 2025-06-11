@@ -16,6 +16,7 @@ package local
 
 import (
 	"context"
+	"math"
 	"testing"
 	"time"
 
@@ -93,7 +94,7 @@ func TestRateLimit(t *testing.T) {
 
 func TestContextCancelDuringConcurrencyWait(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	l := newIngestLimiter(ctx, 1, 1)
+	l := newIngestLimiter(ctx, 1, 100)
 
 	require.NoError(t, l.Acquire(0, 1))
 
@@ -115,9 +116,9 @@ func TestContextCancelDuringConcurrencyWait(t *testing.T) {
 
 func TestContextCancelDuringRateWait(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	l := newIngestLimiter(ctx, 100, 100)
+	l := newIngestLimiter(ctx, 100, 1)
 
-	require.NoError(t, l.Acquire(0, 100))
+	require.NoError(t, l.Acquire(0, 1))
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -131,4 +132,25 @@ func TestContextCancelDuringRateWait(t *testing.T) {
 	case <-time.After(100 * time.Millisecond):
 		t.Fatal("timed out waiting for error")
 	}
+}
+
+func TestIngestLimiterBurst(t *testing.T) {
+	ctx := context.Background()
+	l := newIngestLimiter(ctx, 0, 0)
+	require.Equal(t, math.MaxInt, l.Burst())
+
+	l = newIngestLimiter(ctx, 0, 1000)
+	require.Equal(t, 1000, l.Burst())
+
+	l = newIngestLimiter(ctx, 1000, 0)
+	require.Equal(t, 1000, l.Burst())
+
+	l = newIngestLimiter(ctx, 1000, 1000)
+	require.Equal(t, 1000, l.Burst())
+
+	l = newIngestLimiter(ctx, 1000, 567)
+	require.Equal(t, 567, l.Burst())
+
+	l = newIngestLimiter(ctx, 567, 1000)
+	require.Equal(t, 567, l.Burst())
 }
