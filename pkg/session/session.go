@@ -188,8 +188,9 @@ type session struct {
 	currentPlan base.Plan
 
 	// dom is *domain.Domain, use `any` to avoid import cycle.
-	dom   any
-	store kv.Storage
+	dom       any
+	infoCache *infoschema.InfoCache
+	store     kv.Storage
 
 	sessionPlanCache sessionctx.SessionPlanCache
 
@@ -2152,7 +2153,7 @@ func (s *session) ExecuteStmt(ctx context.Context, stmtNode ast.StmtNode) (sqlex
 	// infoschema there.
 	if sessVars.StmtCtx.ResourceGroupName != sessVars.ResourceGroupName {
 		// if target resource group doesn't exist, fallback to the origin resource group.
-		if _, ok := domain.GetDomain(s).InfoSchema().ResourceGroupByName(ast.NewCIStr(sessVars.StmtCtx.ResourceGroupName)); !ok {
+		if _, ok := s.infoCache.GetLatest().ResourceGroupByName(ast.NewCIStr(sessVars.StmtCtx.ResourceGroupName)); !ok {
 			logutil.Logger(ctx).Warn("Unknown resource group from hint", zap.String("name", sessVars.StmtCtx.ResourceGroupName))
 			sessVars.StmtCtx.ResourceGroupName = sessVars.ResourceGroupName
 			if txn, err := s.Txn(false); err == nil && txn != nil && txn.Valid() {
@@ -2495,7 +2496,7 @@ func (s *session) PrepareStmt(sql string) (stmtID uint32, paramCount int, fields
 	}()
 	if s.sessionVars.TxnCtx.InfoSchema == nil {
 		// We don't need to create a transaction for prepare statement, just get information schema will do.
-		s.sessionVars.TxnCtx.InfoSchema = domain.GetDomain(s).InfoSchema()
+		s.sessionVars.TxnCtx.InfoSchema = s.infoCache.GetLatest()
 	}
 	err = s.loadCommonGlobalVariablesIfNeeded()
 	if err != nil {
@@ -3186,16 +3187,16 @@ func CreateSession(store kv.Storage) (types.Session, error) {
 // CreateSessionWithOpt creates a new session environment with option.
 // Use default option if opt is nil.
 func CreateSessionWithOpt(store kv.Storage, opt *Opt) (types.Session, error) {
-	s, err := createSessionWithOpt(store, opt)
+	do, err := domap.Get(store)
+	if err != nil {
+		return nil, err
+	}
+	s, err := createSessionWithOpt(store, do, do.InfoCache(), opt)
 	if err != nil {
 		return nil, err
 	}
 
 	// Add auth here.
-	do, err := domap.Get(store)
-	if err != nil {
-		return nil, err
-	}
 	extensions, err := extension.GetExtensions()
 	if err != nil {
 		return nil, err
@@ -3829,16 +3830,17 @@ func createSessionsImpl(store kv.Storage, cnt int) ([]*session, error) {
 // This means the min ts reporter is not aware of it and may report a wrong min start ts.
 // In most cases you should use a session pool in domain instead.
 func createSession(store kv.Storage) (*session, error) {
-	return createSessionWithOpt(store, nil)
-}
-
-func createSessionWithOpt(store kv.Storage, opt *Opt) (*session, error) {
 	dom, err := domap.Get(store)
 	if err != nil {
 		return nil, err
 	}
+	return createSessionWithOpt(store, dom, dom.InfoCache(), nil)
+}
+
+func createSessionWithOpt(store kv.Storage, dom *domain.Domain, infoCache *infoschema.InfoCache, opt *Opt) (*session, error) {
 	s := &session{
 		dom:                   dom,
+		infoCache:             infoCache,
 		store:                 store,
 		ddlOwnerManager:       dom.DDL().OwnerManager(),
 		client:                store.GetClient(),
@@ -3902,6 +3904,7 @@ func detachStatsCollector(s *session) *session {
 func CreateSessionWithDomain(store kv.Storage, dom *domain.Domain) (*session, error) {
 	s := &session{
 		dom:                   dom,
+		infoCache:             dom.InfoCache(),
 		store:                 store,
 		sessionVars:           variable.NewSessionVars(nil),
 		client:                store.GetClient(),
@@ -4348,15 +4351,15 @@ func (s *session) GetInfoSchema() infoschemactx.MetaOnlyInfoSchema {
 	}
 
 	if is == nil {
-		is = domain.GetDomain(s).InfoSchema()
+		is = s.infoCache.GetLatest()
 	}
 
 	// Override the infoschema if the session has temporary table.
 	return temptable.AttachLocalTemporaryTableInfoSchema(s, is)
 }
 
-func (s *session) GetDomainInfoSchema() infoschemactx.MetaOnlyInfoSchema {
-	is := domain.GetDomain(s).InfoSchema()
+func (s *session) GetLatestInfoSchema() infoschemactx.MetaOnlyInfoSchema {
+	is := s.infoCache.GetLatest()
 	extIs := &infoschema.SessionExtendedInfoSchema{InfoSchema: is}
 	return temptable.AttachLocalTemporaryTableInfoSchema(s, extIs)
 }
@@ -4628,7 +4631,7 @@ func (s *session) usePipelinedDmlOrWarn(ctx context.Context) bool {
 		)
 		return false
 	}
-	is, ok := s.GetDomainInfoSchema().(infoschema.InfoSchema)
+	is, ok := s.GetLatestInfoSchema().(infoschema.InfoSchema)
 	if !ok {
 		stmtCtx.AppendWarning(errors.New("Pipelined DML failed to get latest InfoSchema. Fallback to standard mode"))
 		return false

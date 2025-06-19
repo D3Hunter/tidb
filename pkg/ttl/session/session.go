@@ -100,7 +100,7 @@ func (s *session) GetSessionVars() *variable.SessionVars {
 
 // GetDomainInfoSchema returns information schema of domain
 func (s *session) GetDomainInfoSchema() infoschema.MetaOnlyInfoSchema {
-	return s.sctx.GetDomainInfoSchema()
+	return s.sctx.GetLatestInfoSchema()
 }
 
 // SessionInfoSchema returns information schema of current session
