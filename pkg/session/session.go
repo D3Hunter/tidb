@@ -1212,39 +1212,31 @@ func (s *session) sysSessionPool() util.SessionPool {
 	return domain.GetDomain(s).SysSessionPool()
 }
 
-func createSessionFunc(store kv.Storage) pools.Factory {
+func getSessionFactory(store kv.Storage) pools.Factory {
+	facWithDom := getSessionFactoryInternal(store, func(store kv.Storage, _ *domain.Domain) (*session, error) {
+		return createSession(store)
+	})
 	return func() (pools.Resource, error) {
-		se, err := createSession(store)
-		if err != nil {
-			return nil, err
-		}
-		err = se.sessionVars.SetSystemVar(vardef.AutoCommit, "1")
-		if err != nil {
-			return nil, err
-		}
-		err = se.sessionVars.SetSystemVar(vardef.MaxExecutionTime, "0")
-		if err != nil {
-			return nil, errors.Trace(err)
-		}
-		err = se.sessionVars.SetSystemVar(vardef.MaxAllowedPacket, strconv.FormatUint(vardef.DefMaxAllowedPacket, 10))
-		if err != nil {
-			return nil, errors.Trace(err)
-		}
-		err = se.sessionVars.SetSystemVar(vardef.TiDBConstraintCheckInPlacePessimistic, vardef.On)
-		if err != nil {
-			return nil, errors.Trace(err)
-		}
-		se.sessionVars.CommonGlobalLoaded = true
-		se.sessionVars.InRestrictedSQL = true
-		// Internal session uses default format to prevent memory leak problem.
-		se.sessionVars.EnableChunkRPC = false
-		return se, nil
+		return facWithDom(nil)
 	}
 }
 
-func createSessionWithDomainFunc(store kv.Storage) func(*domain.Domain) (pools.Resource, error) {
+func getSessionFactoryWithDom(store kv.Storage) func(*domain.Domain) (pools.Resource, error) {
+	return getSessionFactoryInternal(store, CreateSessionWithDomain)
+}
+
+func getSysKSSessionFactory(userKSStore kv.Storage) pools.Factory {
+	facWithDom := getSessionFactoryInternal(userKSStore, func(store kv.Storage, dom *domain.Domain) (*session, error) {
+		return createSysKSSession(store)
+	})
+	return func() (pools.Resource, error) {
+		return facWithDom(nil)
+	}
+}
+
+func getSessionFactoryInternal(store kv.Storage, createSessFn func(store kv.Storage, dom *domain.Domain) (*session, error)) func(*domain.Domain) (pools.Resource, error) {
 	return func(dom *domain.Domain) (pools.Resource, error) {
-		se, err := CreateSessionWithDomain(store, dom)
+		se, err := createSessFn(store, dom)
 		if err != nil {
 			return nil, err
 		}
@@ -3835,6 +3827,18 @@ func createSession(store kv.Storage) (*session, error) {
 		return nil, err
 	}
 	return createSessionWithOpt(store, dom, dom.InfoCache(), nil)
+}
+
+func createSysKSSession(userKSStore kv.Storage) (*session, error) {
+	if userKSStore.GetKeyspace() == keyspace.System {
+		return createSession(userKSStore)
+	}
+	dom, err := domap.Get(userKSStore)
+	if err != nil {
+		return nil, err
+	}
+
+	return createSessionWithOpt(kvstore.GetSystemStorage(), dom, dom.GetSysKSInfoCache(), nil)
 }
 
 func createSessionWithOpt(store kv.Storage, dom *domain.Domain, infoCache *infoschema.InfoCache, opt *Opt) (*session, error) {
