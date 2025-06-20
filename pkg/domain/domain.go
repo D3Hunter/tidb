@@ -650,8 +650,10 @@ func NewDomainWithEtcdClient(
 	if shouldLoadSysKSAdditionally(store) {
 		do.sysksInfoCache = infoschema.NewCache(do.store, int(vardef.SchemaVersionCacheLimit.Load()))
 		do.sysksISLoader = issyncer.NewLoader(kvstore.GetSystemStorage(), do.sysksInfoCache)
+		// TODO register to a separate session manager when we start syncer for
+		// system keyspace.
 		do.sysksSessPool = util.NewSessionPool(
-			capacity, factory,
+			capacity, sysksSessFactory,
 			func(r pools.Resource) {
 				_, ok := r.(sessionctx.Context)
 				intest.Assert(ok)
@@ -875,6 +877,7 @@ func (do *Domain) Start(startMode ddl.StartMode) error {
 // it's not right, but it's enough to push subtasks which depends on it forward,
 // we will fix it in the future.
 func (do *Domain) loadSysKSInfoSchema() error {
+	logutil.BgLogger().Info("loading system keyspace info schema")
 	sysksStore := kvstore.GetSystemStorage()
 	ver, err := sysksStore.CurrentVersion(kv.GlobalTxnScope)
 	if err != nil {
