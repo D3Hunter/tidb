@@ -483,7 +483,7 @@ func (p kvReaderProxy) path() string {
 }
 
 func (p kvReaderProxy) next() (*kvPair, error) {
-	k, v, err := p.r.nextKV()
+	k, v, err := p.r.NextKV()
 	if err != nil {
 		return nil, err
 	}

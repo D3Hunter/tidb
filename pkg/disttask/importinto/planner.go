@@ -15,12 +15,16 @@
 package importinto
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	goerrors "errors"
+	"io"
 	"math"
 	"strconv"
 
+	"github.com/docker/go-units"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/failpoint"
 	"github.com/pingcap/tidb/br/pkg/storage"
@@ -479,6 +483,7 @@ func splitForOneSubtask(
 		regionSplitKeys = append(regionSplitKeys, startKey)
 		regionSplitKeys = append(regionSplitKeys, interiorRegionSplitKeys...)
 		regionSplitKeys = append(regionSplitKeys, endKey)
+		printSizeOfRangeForSubtask(ctx, extStorage, dataFiles, rangeJobKeys)
 		// each subtask will write and ingest one range group
 		m := &WriteIngestStepMeta{
 			KVGroup: kvGroup,
@@ -503,6 +508,75 @@ func splitForOneSubtask(
 	}
 
 	return ret, nil
+}
+
+type rangeInfo struct {
+	size  int
+	count int
+}
+
+func (r rangeInfo) String() string {
+	return "size: " + units.BytesSize(float64(r.size)) + ", count: " + strconv.Itoa(r.count)
+}
+
+func printSizeOfRangeForSubtask(ctx context.Context, extStorage storage.ExternalStorage, dataFiles []string, rangeJobKeys [][]byte) {
+	rangeInfos := make([]rangeInfo, len(rangeJobKeys)-1)
+	for i, dataFile := range dataFiles {
+		r, err := external.NewKVReader(ctx, dataFile, extStorage, 0, 64*1024)
+		if err != nil {
+			logutil.Logger(ctx).Error("failed to create kv reader", zap.String("data-file", dataFile), zap.Error(err))
+			return
+		}
+		defer r.Close()
+		fileRangeInfos := make([]rangeInfo, len(rangeJobKeys)-1)
+		rangeIdx := 0
+		startKey := rangeJobKeys[rangeIdx]
+		endKey := rangeJobKeys[rangeIdx+1]
+		var size, count int
+		for {
+			key, val, err := r.NextKV()
+			if err != nil {
+				if goerrors.Is(err, io.EOF) {
+					fileRangeInfos[rangeIdx] = rangeInfo{size: size, count: count}
+					break
+				}
+				logutil.Logger(ctx).Error("failed to read kv", zap.String("data-file", dataFiles[i]), zap.Error(err))
+				return
+			}
+			if bytes.Compare(key, startKey) >= 0 && bytes.Compare(key, endKey) < 0 {
+				size += len(key) + len(val)
+				count++
+			}
+			if bytes.Compare(key, endKey) >= 0 {
+				fileRangeInfos[rangeIdx] = rangeInfo{size: size, count: count}
+				size, count = len(key)+len(val), 1
+				if rangeIdx >= len(rangeJobKeys)-1 {
+					break
+				}
+				rangeIdx++
+				startKey = rangeJobKeys[rangeIdx]
+				endKey = rangeJobKeys[rangeIdx+1]
+			}
+		}
+		logutil.Logger(ctx).Info("range info inside data file", zap.String("file", dataFile),
+			zap.Stringers("range-info", fileRangeInfos))
+		for j := range fileRangeInfos {
+			rangeInfos[j].size += fileRangeInfos[j].size
+			rangeInfos[j].count += fileRangeInfos[j].count
+		}
+	}
+	var kvSize, memSize, count int
+	for _, info := range rangeInfos {
+		kvSize += info.size
+		memSize += info.size + info.count*48
+		count += info.count
+	}
+	logutil.Logger(ctx).Info("range info among all data files",
+		zap.Stringers("range-info", rangeInfos),
+		zap.String("total-kvSize", units.BytesSize(float64(kvSize))),
+		zap.String("total-memSize", units.BytesSize(float64(memSize))),
+		zap.Int("total-count", count),
+	)
 }
 
 func getSortedKVMetasOfEncodeStep(ctx context.Context, subTaskMetas [][]byte, store storage.ExternalStorage) (map[string]*external.SortedKVMeta, error) {
