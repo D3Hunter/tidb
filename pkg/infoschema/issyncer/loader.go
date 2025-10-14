@@ -421,7 +421,7 @@ func (l *Loader) fetchAllSchemasWithTables(m meta.Reader, schemaCacheSize uint64
 	if len(allSchemas) == 0 {
 		return nil, nil
 	}
-
+	l.logger.Info("loading schema count", zap.Int("schemas", len(allSchemas)))
 	splittedSchemas := l.splitForConcurrentFetch(allSchemas, schemaCacheSize)
 	concurrency := min(len(splittedSchemas), 128)
 
@@ -455,12 +455,13 @@ func (*Loader) fetchResourceGroups(m meta.Reader) ([]*model.ResourceGroupInfo, e
 	return allResourceGroups, nil
 }
 
-func (*Loader) fetchSchemasWithTables(ctx context.Context, schemas []*model.DBInfo, m meta.Reader, schemaCacheSize uint64) error {
+func (l *Loader) fetchSchemasWithTables(ctx context.Context, schemas []*model.DBInfo, m meta.Reader, schemaCacheSize uint64) error {
 	failpoint.Inject("failed-fetch-schemas-with-tables", func() {
 		failpoint.Return(errors.New("failpoint: failed to fetch schemas with tables"))
 	})
 
 	for _, di := range schemas {
+		l.logger.Info("fetch schema with tables", zap.String("db", di.Name.O), zap.Int64("dbID", di.ID))
 		// if the ctx has been canceled, stop fetching schemas.
 		if err := ctx.Err(); err != nil {
 			return err
