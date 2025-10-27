@@ -17,6 +17,7 @@ package importinto
 import (
 	"context"
 	"encoding/json"
+	"math/rand"
 	"strconv"
 	"sync"
 	"time"
@@ -391,6 +392,9 @@ func (sch *importScheduler) OnNextSubtasksBatch(
 	}
 
 	logger.Info("generate subtasks", zap.Int("subtask-count", len(metaBytes)))
+	rand.Shuffle(len(metaBytes), func(i, j int) {
+		metaBytes[i], metaBytes[j] = metaBytes[j], metaBytes[i]
+	})
 	return metaBytes, nil
 }
 
