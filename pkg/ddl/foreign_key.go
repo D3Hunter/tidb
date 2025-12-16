@@ -31,6 +31,7 @@ import (
 	"github.com/pingcap/tidb/pkg/sessionctx"
 	"github.com/pingcap/tidb/pkg/sessionctx/variable"
 	"github.com/pingcap/tidb/pkg/util/dbterror"
+	"github.com/pingcap/tidb/pkg/util/memory"
 	"github.com/pingcap/tidb/pkg/util/sqlexec"
 )
 
@@ -690,6 +691,19 @@ func checkForeignKeyConstrain(
 		sctx.GetSessionVars().OptimizerEnableNAAJ = originValue
 		w.sessPool.Put(sctx)
 	}()
+	bak := sctx.GetSessionVars().MemQuotaQuery
+	defer func() {
+		sctx.GetSessionVars().MemQuotaQuery = bak
+		w.sessPool.Put(sctx)
+	}()
+
+	totalMem, err := memory.MemTotal()
+	if err != nil {
+		// should not happen normally, as in main function of tidb-server, we assert
+		// that memory.MemTotal() will not fail.
+		return err
+	}
+	sctx.GetSessionVars().MemQuotaQuery = int64(totalMem / 2)
 
 	var buf strings.Builder
 	buf.WriteString("select 1 from %n.%n where ")
