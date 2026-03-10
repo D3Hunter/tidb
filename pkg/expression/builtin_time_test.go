@@ -3663,7 +3663,7 @@ func TestStrDatetimeAddDurationFreezesWarningArg(t *testing.T) {
 	require.Len(t, warnings, 1)
 
 	before := warnings[0].Error()
-	copy(buf, []byte("xyz"))
+	copy(buf, "xyz")
 	after := warnings[0].Error()
 	require.Equal(t, before, after)
 	require.Contains(t, before, "abc")
