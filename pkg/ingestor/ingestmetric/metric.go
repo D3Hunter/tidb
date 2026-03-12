@@ -53,7 +53,3 @@ func InitIngestMetrics() {
 func Register(register prometheus.Registerer) {
 	register.MustRegister(WriteIngestAPIDuration)
 }
-
-func init() {
-	InitIngestMetrics()
-}
