@@ -27,7 +27,6 @@ import (
 	"time"
 
 	"github.com/pingcap/failpoint"
-	"github.com/pingcap/tidb/pkg/config/kerneltype"
 	"github.com/pingcap/tidb/pkg/domain"
 	"github.com/pingcap/tidb/pkg/kv"
 	"github.com/pingcap/tidb/pkg/meta/model"
@@ -452,9 +451,6 @@ func TestOutOfRangeEstimationAfterDelete(t *testing.T) {
 }
 
 func TestEstimationForUnknownValues(t *testing.T) {
-	if kerneltype.IsNextGen() {
-		t.Skip("next-gen kernel don't support the analyze version 1")
-	}
 	store, dom := testkit.CreateMockStoreAndDomain(t)
 	testKit := testkit.NewTestKit(t, store)
 	testKit.MustExec("set global tidb_analyze_column_options = 'PREDICATE'")
@@ -1803,7 +1799,7 @@ func TestOrderingIdxSelectivityRatio(t *testing.T) {
 }
 
 func TestOrderingIdxSelectivityRatioForJoin(t *testing.T) {
-	store, _ := testkit.CreateMockStoreAndDomain(t)
+	store, dom := testkit.CreateMockStoreAndDomain(t)
 	testKit := testkit.NewTestKit(t, store)
 
 	testKit.MustExec("use test")
@@ -1812,6 +1808,8 @@ func TestOrderingIdxSelectivityRatioForJoin(t *testing.T) {
 	testKit.MustExec("insert into t values (1,1,1), (2,2,2), (3,3,3), (4,4,4), (5,5,5), (6,6,6), (7,7,7), (8,8,8), (9,9,9), (10,10,10)")
 	testKit.MustExec("insert into t select a,b,c from t")
 	testKit.MustExec("analyze table t")
+	// Ensure stats are fully loaded into cache to avoid nondeterminism from stale cache.
+	require.NoError(t, dom.StatsHandle().Update(context.Background(), dom.InfoSchema()))
 
 	// Discourage merge join and hash join to encourage index join, and discourage topn to encourage limit.
 	testKit.MustExec("set @@session.tidb_opt_merge_join_cost_factor = 1000")
@@ -1841,21 +1839,20 @@ func TestOrderingIdxSelectivityRatioForJoin(t *testing.T) {
 }
 
 func TestCrossValidationSelectivity(t *testing.T) {
-	if kerneltype.IsNextGen() {
-		t.Skip("analyze V1 cannot support in the next gen")
-	}
 	store, dom := testkit.CreateMockStoreAndDomain(t)
 	tk := testkit.NewTestKit(t, store)
 	h := dom.StatsHandle()
 	tk.MustExec("use test")
 	tk.MustExec("drop table if exists t")
-	tk.MustExec("set @@tidb_analyze_version = 1")
+	tk.MustExec("set @@tidb_analyze_version = 2")
 	tk.MustExec("create table t (a int, b int, c int, primary key (a, b) clustered)")
 	err := statstestutil.HandleNextDDLEventWithTxn(h)
 	require.NoError(t, err)
 	tk.MustExec("insert into t values (1,2,3), (1,4,5)")
 	tk.MustExec("flush stats_delta")
 	tk.MustExec("analyze table t")
+	// Ensure stats are fully loaded into cache to avoid nondeterminism from stale cache.
+	require.NoError(t, h.Update(context.Background(), dom.InfoSchema()))
 	tk.MustQuery("explain format = 'brief' select * from t where a = 1 and b > 0 and b < 1000 and c > 1000").Check(testkit.Rows(
 		"TableReader 1.00 root  data:Selection",
 		"└─Selection 1.00 cop[tikv]  gt(test.t.c, 1000)",
@@ -1932,7 +1929,7 @@ func TestIgnoreRealtimeStats(t *testing.T) {
 }
 
 func TestSubsetIdxCardinality(t *testing.T) {
-	store, _ := testkit.CreateMockStoreAndDomain(t)
+	store, dom := testkit.CreateMockStoreAndDomain(t)
 	testKit := testkit.NewTestKit(t, store)
 
 	testKit.MustExec("use test")
@@ -1951,6 +1948,8 @@ func TestSubsetIdxCardinality(t *testing.T) {
 	testKit.MustExec("insert into t select a, b + 10, c from t")
 	testKit.MustExec("flush stats_delta")
 	testKit.MustExec(`analyze table t`)
+	// Ensure stats are fully loaded into cache to avoid nondeterminism from stale cache.
+	require.NoError(t, dom.StatsHandle().Update(context.Background(), dom.InfoSchema()))
 
 	var (
 		input  []string
