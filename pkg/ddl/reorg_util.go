@@ -238,10 +238,7 @@ func estimateTableSizeByID(ctx context.Context, pdCli pdhttp.Client, store helpe
 			break
 		}
 		for _, r := range regionInfos.Regions {
-			sizeInMiB := r.ApproximateSize
-			if r.ApproximateKvSize > 0 {
-				sizeInMiB = r.ApproximateKvSize
-			}
+			sizeInMiB := max(r.ApproximateSize, r.ApproximateKvSize)
 			totalSize += sizeInMiB * units.MiB
 		}
 		lastKey := regionInfos.Regions[len(regionInfos.Regions)-1].EndKey

@@ -69,14 +69,18 @@ func expectedRegionRange(tableID int64) ([]byte, []byte) {
 	return mockCodec{}.EncodeRegionRange(tableStart, tableEnd)
 }
 
-func TestEstimateTableSizeByIDPrefersApproximateKVSize(t *testing.T) {
+func TestEstimateTableSizeByIDUsesMaxApproximateSizes(t *testing.T) {
 	pdCli := &mockPDHTTPClient{
 		regionInfos: []*pdhttp.RegionsInfo{
 			{
-				Count: 2,
+				Count: 3,
 				Regions: []pdhttp.RegionInfo{
-					{ID: 1, ApproximateSize: 64, ApproximateKvSize: 5},
-					{ID: 2, ApproximateSize: 7, ApproximateKvSize: 0},
+					// kv > size -> use kv
+					{ID: 1, ApproximateSize: 5, ApproximateKvSize: 64},
+					// size > kv -> use size
+					{ID: 2, ApproximateSize: 16, ApproximateKvSize: 7},
+					// zero still follows max()
+					{ID: 3, ApproximateSize: 0, ApproximateKvSize: 9},
 				},
 			},
 			{},
@@ -85,7 +89,7 @@ func TestEstimateTableSizeByIDPrefersApproximateKVSize(t *testing.T) {
 
 	size, err := estimateTableSizeByID(context.Background(), pdCli, mockHelperStorage{codec: mockCodec{}}, 42)
 	require.NoError(t, err)
-	require.Equal(t, int64(12*units.MiB), size)
+	require.Equal(t, int64(89*units.MiB), size)
 	require.Equal(t, 2, pdCli.callCount)
 	expectedStart, expectedEnd := expectedRegionRange(42)
 	require.NotNil(t, pdCli.firstRange)
