@@ -3408,6 +3408,8 @@ func estimateRowSizeFromRegion(ctx context.Context, store kv.Storage, tbl table.
 	if sample.ApproximateKeys == 0 || sample.ApproximateSize == 0 {
 		return 0, fmt.Errorf("zero approximate size")
 	}
+	// This path estimates average on-disk bytes per key from one sampled region.
+	// Keep using ApproximateSize here; table-level logical-size estimation uses max(size, kvSize).
 	return int(uint64(sample.ApproximateSize)*size.MB) / int(sample.ApproximateKeys), nil
 }
 
