@@ -19,7 +19,9 @@ import (
 	"testing"
 
 	"github.com/docker/go-units"
+	"github.com/pingcap/tidb/pkg/meta/model"
 	"github.com/pingcap/tidb/pkg/store/helper"
+	"github.com/pingcap/tidb/pkg/table/tables"
 	"github.com/pingcap/tidb/pkg/tablecodec"
 	"github.com/stretchr/testify/require"
 	tikv "github.com/tikv/client-go/v2/tikv"
@@ -37,10 +39,19 @@ func (mockCodec) EncodeRegionRange(start, end []byte) ([]byte, []byte) {
 type mockHelperStorage struct {
 	helper.Storage
 	codec tikv.Codec
+	pdCli pdhttp.Client
 }
 
 func (s mockHelperStorage) GetCodec() tikv.Codec {
 	return s.codec
+}
+
+func (s mockHelperStorage) GetPDHTTPClient() pdhttp.Client {
+	return s.pdCli
+}
+
+func (mockHelperStorage) GetRegionCache() *tikv.RegionCache {
+	return nil
 }
 
 type mockPDHTTPClient struct {
@@ -49,6 +60,10 @@ type mockPDHTTPClient struct {
 	callCount   int
 	firstRange  *pdhttp.KeyRange
 	firstLimit  int
+}
+
+func (c *mockPDHTTPClient) WithCallerID(string) pdhttp.Client {
+	return c
 }
 
 func (c *mockPDHTTPClient) GetRegionsByKeyRange(_ context.Context, keyRange *pdhttp.KeyRange, limit int) (*pdhttp.RegionsInfo, error) {
@@ -96,4 +111,72 @@ func TestEstimateTableSizeByIDUsesMaxApproximateSizes(t *testing.T) {
 	require.Equal(t, 128, pdCli.firstLimit)
 	require.Equal(t, expectedStart, pdCli.firstRange.StartKey)
 	require.Equal(t, expectedEnd, pdCli.firstRange.EndKey)
+
+	t.Run("EstimateRowSizeFromRegionUsesMaxApproximateSizes", func(t *testing.T) {
+		tableID := int64(1024)
+		tbl := tables.MockTableFromMeta(&model.TableInfo{ID: tableID})
+		testCases := []struct {
+			name            string
+			approxSizeMiB   int64
+			approxKvSizeMiB int64
+			approxKeys      int64
+			expectedBytes   int
+		}{
+			{
+				name:            "kv-greater-than-size-uses-kv",
+				approxSizeMiB:   4,
+				approxKvSizeMiB: 10,
+				approxKeys:      2,
+				expectedBytes:   int(10 * units.MiB / 2),
+			},
+			{
+				name:            "size-greater-than-kv-uses-size",
+				approxSizeMiB:   12,
+				approxKvSizeMiB: 3,
+				approxKeys:      3,
+				expectedBytes:   int(12 * units.MiB / 3),
+			},
+			{
+				name:            "zero-kv-size-still-uses-max",
+				approxSizeMiB:   9,
+				approxKvSizeMiB: 0,
+				approxKeys:      3,
+				expectedBytes:   int(9 * units.MiB / 3),
+			},
+		}
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				rowPD := &mockPDHTTPClient{
+					regionInfos: []*pdhttp.RegionsInfo{
+						{
+							Count: 3,
+							Regions: []pdhttp.RegionInfo{
+								{ID: 1, ApproximateSize: 1, ApproximateKvSize: 1, ApproximateKeys: 1},
+								{
+									ID:                2,
+									ApproximateSize:   tc.approxSizeMiB,
+									ApproximateKvSize: tc.approxKvSizeMiB,
+									ApproximateKeys:   tc.approxKeys,
+								},
+								{ID: 3, ApproximateSize: 1, ApproximateKvSize: 1, ApproximateKeys: 1},
+							},
+						},
+					},
+				}
+				rowSize, err := estimateRowSizeFromRegion(
+					context.Background(),
+					mockHelperStorage{codec: mockCodec{}, pdCli: rowPD},
+					tbl,
+				)
+				require.NoError(t, err)
+				require.Equal(t, tc.expectedBytes, rowSize)
+				require.Equal(t, 1, rowPD.callCount)
+				require.Equal(t, 3, rowPD.firstLimit)
+				expectedStart, expectedEnd := expectedRegionRange(tableID)
+				require.NotNil(t, rowPD.firstRange)
+				require.Equal(t, expectedStart, rowPD.firstRange.StartKey)
+				require.Equal(t, expectedEnd, rowPD.firstRange.EndKey)
+			})
+		}
+	})
 }
