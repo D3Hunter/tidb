@@ -238,6 +238,8 @@ func estimateTableSizeByID(ctx context.Context, pdCli pdhttp.Client, store helpe
 			break
 		}
 		for _, r := range regionInfos.Regions {
+			// ApproximateSize is SST/blob file size (can reflect compression), while
+			// ApproximateKvSize is KV data size and usually better tracks logical table size.
 			sizeInMiB := max(r.ApproximateSize, r.ApproximateKvSize)
 			totalSize += sizeInMiB * units.MiB
 		}
