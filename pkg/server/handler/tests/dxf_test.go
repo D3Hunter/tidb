@@ -16,6 +16,7 @@ package tests
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -24,8 +25,12 @@ import (
 	"time"
 
 	"github.com/pingcap/tidb/pkg/config/kerneltype"
+	"github.com/pingcap/tidb/pkg/disttask/framework/proto"
 	"github.com/pingcap/tidb/pkg/disttask/framework/schstatus"
+	"github.com/pingcap/tidb/pkg/disttask/framework/storage"
+	"github.com/pingcap/tidb/pkg/kv"
 	"github.com/stretchr/testify/require"
+	"github.com/tikv/client-go/v2/util"
 )
 
 func TestDXFScheduleAPI(t *testing.T) {
@@ -86,6 +91,45 @@ func TestDXFScheduleAPI(t *testing.T) {
 				require.WithinRange(t, param.ExpireTime, time.Now().Add(param.TTL-time.Minute), time.Now().Add(param.TTL))
 			}
 		}
+	})
+
+	t.Run("active task api", func(t *testing.T) {
+		resp, err := ts.PostStatus("/dxf/task/active", "", bytes.NewBuffer([]byte("")))
+		require.NoError(t, err)
+		require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		require.Contains(t, string(body), "This api only support GET method")
+		require.NoError(t, resp.Body.Close())
+
+		tm, err := storage.GetTaskManager()
+		require.NoError(t, err)
+		ctx := util.WithInternalSourceType(context.Background(), kv.InternalDistTask)
+		require.NoError(t, tm.InitMeta(ctx, ":4000", ""))
+		_, err = tm.ExecuteSQLWithNewSession(ctx, "delete from mysql.tidb_global_task")
+		require.NoError(t, err)
+
+		_, err = tm.CreateTask(ctx, "active-key-1", proto.ImportInto, "SYSTEM", 8, "", 0, proto.ExtraParams{}, []byte("test"))
+		require.NoError(t, err)
+		_, err = tm.CreateTask(ctx, "active-key-2", proto.ImportInto, "ks1", 8, "", 0, proto.ExtraParams{}, []byte("test"))
+		require.NoError(t, err)
+		_, err = tm.CreateTask(ctx, "active-key-3", proto.ImportInto, "ks1", 8, "", 0, proto.ExtraParams{}, []byte("test"))
+		require.NoError(t, err)
+
+		resp, err = ts.FetchStatus("/dxf/task/active")
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		body, err = io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		require.NoError(t, resp.Body.Close())
+		out := struct {
+			Total       int64            `json:"total"`
+			PerKeyspace map[string]int64 `json:"per_keyspace"`
+		}{}
+		require.NoError(t, json.Unmarshal(body, &out))
+		require.EqualValues(t, 3, out.Total)
+		require.EqualValues(t, 1, out.PerKeyspace["SYSTEM"])
+		require.EqualValues(t, 2, out.PerKeyspace["ks1"])
 	})
 }
 

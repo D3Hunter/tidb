@@ -252,6 +252,7 @@ func (s *Server) startHTTPServer() {
 		router.Handle("/dxf/schedule/status", tikvhandler.NewDXFScheduleStatusHandler(tikvHandlerTool.Store.(kv.Storage))).Name("DXF_Schedule_Status")
 		router.Handle("/dxf/schedule", tikvhandler.NewDXFScheduleHandler(tikvHandlerTool.Store.(kv.Storage))).Name("DXF_Schedule")
 		router.Handle("/dxf/schedule/tune", tikvhandler.NewDXFScheduleTuneHandler(tikvHandlerTool.Store.(kv.Storage))).Name("DXF_Schedule_Tune")
+		router.Handle("/dxf/task/active", tikvhandler.NewDXFActiveTaskHandler()).Name("DXF_Task_Active")
 	}
 
 	router.Handle("/ddl/check/{db}/{table}/{index}", tikvhandler.NewDDLCheckHandler(tikvHandlerTool)).Name("DDL_Check")
