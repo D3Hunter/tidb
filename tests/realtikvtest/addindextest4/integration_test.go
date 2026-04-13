@@ -22,6 +22,7 @@ import (
 
 	"github.com/pingcap/tidb/pkg/config"
 	"github.com/pingcap/tidb/pkg/config/kerneltype"
+	"github.com/pingcap/tidb/pkg/ddl/ingest"
 	"github.com/pingcap/tidb/pkg/meta/model"
 	"github.com/pingcap/tidb/pkg/testkit"
 	"github.com/pingcap/tidb/pkg/testkit/testfailpoint"
@@ -198,4 +199,47 @@ func TestFixAdminAlterDDLJobs(t *testing.T) {
 	}
 	tk1.MustExec("set @@global.tidb_enable_dist_task = on;")
 	tk1.MustExec("drop table t;")
+}
+
+func setupAddIndexClassicVars(tk *testkit.TestKit, distTaskOn bool) {
+	if !kerneltype.IsClassic() {
+		return
+	}
+	tk.MustExec("set global tidb_ddl_enable_fast_reorg = 1")
+	if distTaskOn {
+		tk.MustExec("set global tidb_enable_dist_task = 1")
+	} else {
+		tk.MustExec("set global tidb_enable_dist_task = 0")
+	}
+}
+
+func TestAddIndexResumesFromCheckpointAfterPartialScan(t *testing.T) {
+	runCase := func(t *testing.T, distTaskOn bool) {
+		store := realtikvtest.CreateMockStoreAndSetup(t)
+		tk := testkit.NewTestKit(t, store)
+		tk.MustExec("use test")
+
+		setupAddIndexClassicVars(tk, distTaskOn)
+		ingest.ForceSyncFlagForTest.Store(true)
+
+		tk.MustExec("drop table if exists t")
+		tk.MustExec("create table t (a bigint primary key, b bigint)")
+		for i := range 2000 {
+			tk.MustExec("insert into t values (?, ?)", i, i)
+		}
+
+		testfailpoint.Enable(t,
+			"github.com/pingcap/tidb/pkg/ddl/mockScanRecordPartialError",
+			"1*return(false)->1*return(true)")
+
+		tk.MustExec("alter table t add unique index idx_b(b)")
+
+		tblCnt := tk.MustQuery("select count(*) from t").Rows()[0][0].(string)
+		idxCnt := tk.MustQuery("select count(*) from t use index(idx_b)").Rows()[0][0].(string)
+		require.Equal(t, tblCnt, idxCnt)
+		tk.MustExec("admin check table t")
+	}
+
+	t.Run("dist_task_off", func(t *testing.T) { runCase(t, false) })
+	t.Run("dist_task_on", func(t *testing.T) { runCase(t, true) })
 }
