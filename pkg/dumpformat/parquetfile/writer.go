@@ -182,7 +182,6 @@ func (pw *ParquetWriter) Write(src []sql.RawBytes) error {
 	if pw.closed {
 		return fmt.Errorf("parquet writer is closed")
 	}
-	pw.writer.FileMetadata()
 	if err := pw.normalizeRow(src); err != nil {
 		return err
 	}
