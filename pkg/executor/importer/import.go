@@ -275,9 +275,9 @@ type Plan struct {
 	// ref https://dev.mysql.com/doc/refman/8.0/en/load-data.html#load-data-column-assignments
 	Restrictive bool
 
-	// Location is used to convert time type for parquet, see
+	// LocationID is used to convert time type for parquet, see
 	// https://github.com/apache/parquet-format/blob/master/LogicalTypes.md#timestamp
-	Location *time.Location
+	LocationID string
 
 	SQLMode mysql.SQLMode
 	// Charset is the charset of the data file when file is CSV or TSV.
@@ -421,10 +421,10 @@ type LoadDataController struct {
 	// - "...(a,b) set b=100" will set b=100 in mysql, but in tidb the set is ignored.
 	// - ref columns in set clause is allowed in mysql, but not in tidb
 	InsertColumns []*table.Column
-
-	logger    *zap.Logger
-	dataStore storeapi.Storage
-	dataFiles []*mydump.SourceFileMeta
+	Location      *time.Location
+	logger        *zap.Logger
+	dataStore     storeapi.Storage
+	dataFiles     []*mydump.SourceFileMeta
 	// exported for testing.
 	TotalRealSize int64
 	// globalSortStore is used to store sorted data when using global sort.
@@ -526,6 +526,7 @@ func NewImportPlan(ctx context.Context, userSctx sessionctx.Context, plan *plann
 	restrictive := userSctx.GetSessionVars().SQLMode.HasStrictMode()
 	lineFieldsInfo := newDefaultLineFieldsInfo()
 
+	location := userSctx.GetSessionVars().Location()
 	p := &Plan{
 		TableInfo:        tbl.Meta(),
 		DesiredTableInfo: tbl.Meta(),
@@ -538,7 +539,7 @@ func NewImportPlan(ctx context.Context, userSctx sessionctx.Context, plan *plann
 		FieldNullDef:   defaultFieldNullDef,
 		LineFieldsInfo: lineFieldsInfo,
 
-		Location:         userSctx.GetSessionVars().Location(),
+		LocationID:       location.String(),
 		SQLMode:          userSctx.GetSessionVars().SQLMode,
 		ImportantSysVars: getImportantSysVars(userSctx),
 
@@ -626,10 +627,25 @@ func WithLogger(logger *zap.Logger) Option {
 func NewLoadDataController(plan *Plan, tbl table.Table, astArgs *ASTArgs, options ...Option) (*LoadDataController, error) {
 	fullTableName := tbl.Meta().Name.String()
 	logger := log.L().With(zap.String("table", fullTableName))
+	var loc *time.Location
+	// historically, we store *time.Location in Plan, but *time.Location cannot
+	// be marshaled into JSON, we now only store location name in Plan, and load
+	// location when creating controller, for those old plans, we keep the Location
+	// nil. it's semantically the same as the old incorrectly marshaled Location,
+	// both will be taken as UTC when used to parse parquet files.
+	// see sparkRebaseTimeZoneID too.
+	if plan.LocationID != "" {
+		location, err := time.LoadLocation(plan.LocationID)
+		if err != nil {
+			return nil, errors.Wrapf(err, "invalid location %s", plan.LocationID)
+		}
+		loc = location
+	}
 	c := &LoadDataController{
 		Plan:            plan,
 		ASTArgs:         astArgs,
 		Table:           tbl,
+		Location:        loc,
 		logger:          logger,
 		ExecuteNodesCnt: 1,
 	}
@@ -1475,6 +1491,7 @@ func (e *LoadDataController) InitDataFiles(ctx context.Context) error {
 			FileSize:    size,
 			Compression: compressTp,
 			Type:        sourceType,
+			ParquetMeta: mydump.ParquetFileMeta{Loc: e.Location},
 		}
 		fileMeta.RealSize = mydump.EstimateRealSizeForFile(ctx, fileMeta, s)
 		fileMeta.RealSize = int64(float64(fileMeta.RealSize) * compressionRatio)
@@ -1531,6 +1548,7 @@ func (e *LoadDataController) InitDataFiles(ctx context.Context) error {
 					FileSize:    size,
 					Compression: compressTp,
 					Type:        sourceType,
+					ParquetMeta: mydump.ParquetFileMeta{Loc: e.Location},
 				}
 				fileMeta.RealSize = int64(ce.estimate(ctx, fileMeta, s) * float64(fileMeta.FileSize))
 				fileMeta.RealSize = int64(float64(fileMeta.RealSize) * sizeExpansionRatio)
