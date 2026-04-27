@@ -57,6 +57,17 @@ type column struct {
 	ColumnType
 	Repetition parquet.Repetition
 	Optional   bool
+	// timestampUnit caches TimestampLogicalType.TimeUnit() to avoid calling it
+	// for every row.
+	timestampUnit schema.TimeUnitType
+}
+
+func timestampUnitFromLogicalType(logicalType schema.LogicalType) schema.TimeUnitType {
+	timestampLogicalType, ok := logicalType.(schema.TimestampLogicalType)
+	if !ok {
+		return schema.TimeUnitUnknown
+	}
+	return timestampLogicalType.TimeUnit()
 }
 
 type parsedColumnValue struct {

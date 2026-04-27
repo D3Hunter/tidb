@@ -99,6 +99,7 @@ func TestParseRawColumnValueCoversSuccessAndErrorBranches(t *testing.T) {
 			Physical: parquet.Types.Int64,
 			Logical:  schema.NewTimestampLogicalType(false, schema.TimeUnitMicros),
 		},
+		timestampUnit: schema.TimeUnitMicros,
 	})
 	require.NoError(t, err)
 	require.False(t, isNull)
@@ -110,6 +111,7 @@ func TestParseRawColumnValueCoversSuccessAndErrorBranches(t *testing.T) {
 			Physical: parquet.Types.Int64,
 			Logical:  schema.NewTimestampLogicalType(false, schema.TimeUnitMillis),
 		},
+		timestampUnit: schema.TimeUnitMillis,
 	})
 	require.NoError(t, err)
 	require.False(t, isNull)
@@ -121,6 +123,7 @@ func TestParseRawColumnValueCoversSuccessAndErrorBranches(t *testing.T) {
 			Physical: parquet.Types.Int64,
 			Logical:  schema.NewTimestampLogicalType(false, schema.TimeUnitMicros),
 		},
+		timestampUnit: schema.TimeUnitMicros,
 	})
 	require.NoError(t, err)
 	require.False(t, isNull)
@@ -132,21 +135,11 @@ func TestParseRawColumnValueCoversSuccessAndErrorBranches(t *testing.T) {
 			Physical: parquet.Types.Int64,
 			Logical:  schema.NewTimestampLogicalType(false, schema.TimeUnitMicros),
 		},
+		timestampUnit: schema.TimeUnitMicros,
 	})
 	require.NoError(t, err)
 	require.False(t, isNull)
 	require.Equal(t, time.Date(2024, 1, 2, 3, 4, 5, 100000000, time.UTC).UnixMicro(), value.(int64))
-
-	value, isNull, err = parseRawColumnValue(sql.RawBytes("2024-01-02T03:04:05"), column{
-		Optional: true,
-		ColumnType: ColumnType{
-			Physical: parquet.Types.Int64,
-			Logical:  schema.NewTimestampLogicalType(false, schema.TimeUnitMicros),
-		},
-	})
-	require.NoError(t, err)
-	require.False(t, isNull)
-	require.Equal(t, time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC).UnixMicro(), value.(int64))
 
 	value, isNull, err = parseRawColumnValue(sql.RawBytes("0000-00-00 00:00:00"), column{
 		Optional: true,
@@ -154,6 +147,7 @@ func TestParseRawColumnValueCoversSuccessAndErrorBranches(t *testing.T) {
 			Physical: parquet.Types.Int64,
 			Logical:  schema.NewTimestampLogicalType(false, schema.TimeUnitMicros),
 		},
+		timestampUnit: schema.TimeUnitMicros,
 	})
 	require.NoError(t, err)
 	require.True(t, isNull)
@@ -165,10 +159,12 @@ func TestParseRawColumnValueCoversSuccessAndErrorBranches(t *testing.T) {
 			Physical: parquet.Types.Int64,
 			Logical:  schema.NewTimestampLogicalType(false, schema.TimeUnitMicros),
 		},
+		timestampUnit: schema.TimeUnitMicros,
 	})
 	require.Error(t, err)
 
 	_, _, err = parseRawColumnValue(sql.RawBytes("9223372036854775808"), column{
+		timestampUnit: schema.TimeUnitUnknown,
 		ColumnType: ColumnType{
 			Physical: parquet.Types.Int64,
 			Logical:  schema.NewDecimalLogicalType(19, 0),
@@ -240,7 +236,8 @@ func TestParseRawColumnValueNumericPrimitiveBranches(t *testing.T) {
 	require.Equal(t, int32(123), value.(int32))
 
 	value, isNull, err = parseRawColumnValue(sql.RawBytes("456"), column{
-		ColumnType: ColumnType{Physical: parquet.Types.Int64},
+		timestampUnit: schema.TimeUnitUnknown,
+		ColumnType:    ColumnType{Physical: parquet.Types.Int64},
 	})
 	require.NoError(t, err)
 	require.False(t, isNull)

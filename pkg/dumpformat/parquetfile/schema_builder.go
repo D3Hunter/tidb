@@ -42,11 +42,13 @@ func buildParquetSchemaFromColumns(columns []*ColumnInfo) (*schema.GroupNode, []
 		}
 
 		columnType := ToColumnType(columnInfo)
+		timestampUnit := timestampUnitFromLogicalType(columnType.Logical)
 		parsedColumn := column{
-			ColumnInfo: *columnInfo,
-			ColumnType: columnType,
-			Repetition: repetition,
-			Optional:   optional,
+			ColumnInfo:    *columnInfo,
+			ColumnType:    columnType,
+			Repetition:    repetition,
+			Optional:      optional,
+			timestampUnit: timestampUnit,
 		}
 		field, err := newPrimitiveNode(parsedColumn)
 		if err != nil {

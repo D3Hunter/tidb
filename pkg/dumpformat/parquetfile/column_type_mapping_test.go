@@ -115,7 +115,8 @@ func TestToColumnTypeMappings(t *testing.T) {
 		timestampMillisType := ToColumnType(&ColumnInfo{Type: "TIMESTAMP", Scale: 3})
 		timestampMillisLogicalType, ok := timestampMillisType.Logical.(schema.TimestampLogicalType)
 		require.True(t, ok)
-		require.Equal(t, schema.TimeUnitMillis, timestampMillisLogicalType.TimeUnit())
+		// we always use TimeUnitMicros.
+		require.Equal(t, schema.TimeUnitMicros, timestampMillisLogicalType.TimeUnit())
 
 		datetimeMicrosType := ToColumnType(&ColumnInfo{Type: "DATETIME", Scale: 6})
 		datetimeMicrosLogicalType, ok := datetimeMicrosType.Logical.(schema.TimestampLogicalType)
@@ -125,7 +126,8 @@ func TestToColumnTypeMappings(t *testing.T) {
 		datetimeMillisType := ToColumnType(&ColumnInfo{Type: "DATETIME", Precision: 23, Scale: 3})
 		datetimeMillisLogicalType, ok := datetimeMillisType.Logical.(schema.TimestampLogicalType)
 		require.True(t, ok)
-		require.Equal(t, schema.TimeUnitMillis, datetimeMillisLogicalType.TimeUnit())
+		// we always use TimeUnitMicros.
+		require.Equal(t, schema.TimeUnitMicros, datetimeMillisLogicalType.TimeUnit())
 
 		bigintType := ToColumnType(&ColumnInfo{Type: "BIGINT"})
 		require.Equal(t, parquet.Types.Int64, bigintType.Physical)

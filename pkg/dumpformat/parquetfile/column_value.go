@@ -77,7 +77,7 @@ func parseRawColumnValue(rawValue sql.RawBytes, column column) (any, bool, error
 				}
 				return nil, false, err
 			}
-			return t.UnixMicro(), false, nil
+			return unixTimestampByUnit(t, column.timestampUnit), false, nil
 		}
 		if _, ok := column.Logical.(schema.DecimalLogicalType); ok {
 			scaled, err := parseDecimalToScaledInteger(s, column.ColumnType.Scale)
@@ -135,6 +135,19 @@ func parseRawColumnValue(rawValue sql.RawBytes, column column) (any, bool, error
 		return parquet.FixedLenByteArray(cloned), false, nil
 	default:
 		return nil, false, fmt.Errorf("unsupported parquet physical type %s", column.Physical)
+	}
+}
+
+func unixTimestampByUnit(t time.Time, unit schema.TimeUnitType) int64 {
+	switch unit {
+	case schema.TimeUnitMillis:
+		return t.UnixMilli()
+	case schema.TimeUnitMicros:
+		return t.UnixMicro()
+	case schema.TimeUnitNanos:
+		return t.UnixNano()
+	default:
+		return t.UnixMicro()
 	}
 }
 
