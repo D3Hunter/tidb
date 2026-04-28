@@ -62,19 +62,19 @@ func TestToFixedLenTwoComplementHandlesBoundariesAndOverflow(t *testing.T) {
 
 func TestParseRawColumnValueCoversSuccessAndErrorBranches(t *testing.T) {
 	value, isNull, err := parseRawColumnValue(sql.RawBytes("true"), column{
-		ColumnType: ColumnType{Physical: parquet.Types.Boolean},
+		columnType: columnType{Physical: parquet.Types.Boolean},
 	})
 	require.NoError(t, err)
 	require.False(t, isNull)
 	require.Equal(t, true, value.(bool))
 
 	_, _, err = parseRawColumnValue(sql.RawBytes("bad-bool"), column{
-		ColumnType: ColumnType{Physical: parquet.Types.Boolean},
+		columnType: columnType{Physical: parquet.Types.Boolean},
 	})
 	require.Error(t, err)
 
 	value, isNull, err = parseRawColumnValue(sql.RawBytes("12.34"), column{
-		ColumnType: ColumnType{
+		columnType: columnType{
 			Physical: parquet.Types.Int32,
 			Logical:  schema.NewDecimalLogicalType(9, 2),
 			Scale:    2,
@@ -85,7 +85,7 @@ func TestParseRawColumnValueCoversSuccessAndErrorBranches(t *testing.T) {
 	require.Equal(t, int32(1234), value.(int32))
 
 	_, _, err = parseRawColumnValue(sql.RawBytes("21474836.48"), column{
-		ColumnType: ColumnType{
+		columnType: columnType{
 			Physical: parquet.Types.Int32,
 			Logical:  schema.NewDecimalLogicalType(9, 2),
 			Scale:    2,
@@ -95,7 +95,7 @@ func TestParseRawColumnValueCoversSuccessAndErrorBranches(t *testing.T) {
 
 	value, isNull, err = parseRawColumnValue(sql.RawBytes("2024-01-02 03:04:05"), column{
 		allowsNullEncoding: true,
-		ColumnType: ColumnType{
+		columnType: columnType{
 			Physical: parquet.Types.Int64,
 			Logical:  schema.NewTimestampLogicalType(false, schema.TimeUnitMicros),
 		},
@@ -107,7 +107,7 @@ func TestParseRawColumnValueCoversSuccessAndErrorBranches(t *testing.T) {
 
 	value, isNull, err = parseRawColumnValue(sql.RawBytes("2024-01-02 03:04:05.123"), column{
 		allowsNullEncoding: true,
-		ColumnType: ColumnType{
+		columnType: columnType{
 			Physical: parquet.Types.Int64,
 			Logical:  schema.NewTimestampLogicalType(false, schema.TimeUnitMillis),
 		},
@@ -119,7 +119,7 @@ func TestParseRawColumnValueCoversSuccessAndErrorBranches(t *testing.T) {
 
 	value, isNull, err = parseRawColumnValue(sql.RawBytes("2024-01-02 03:04:05.123456"), column{
 		allowsNullEncoding: true,
-		ColumnType: ColumnType{
+		columnType: columnType{
 			Physical: parquet.Types.Int64,
 			Logical:  schema.NewTimestampLogicalType(false, schema.TimeUnitMicros),
 		},
@@ -131,7 +131,7 @@ func TestParseRawColumnValueCoversSuccessAndErrorBranches(t *testing.T) {
 
 	value, isNull, err = parseRawColumnValue(sql.RawBytes("2024-01-02 03:04:05.1"), column{
 		allowsNullEncoding: true,
-		ColumnType: ColumnType{
+		columnType: columnType{
 			Physical: parquet.Types.Int64,
 			Logical:  schema.NewTimestampLogicalType(false, schema.TimeUnitMicros),
 		},
@@ -143,7 +143,7 @@ func TestParseRawColumnValueCoversSuccessAndErrorBranches(t *testing.T) {
 
 	value, isNull, err = parseRawColumnValue(sql.RawBytes("0000-00-00 00:00:00"), column{
 		allowsNullEncoding: true,
-		ColumnType: ColumnType{
+		columnType: columnType{
 			Physical: parquet.Types.Int64,
 			Logical:  schema.NewTimestampLogicalType(false, schema.TimeUnitMicros),
 		},
@@ -155,7 +155,7 @@ func TestParseRawColumnValueCoversSuccessAndErrorBranches(t *testing.T) {
 
 	_, _, err = parseRawColumnValue(sql.RawBytes("0000-00-00 00:00:00"), column{
 		allowsNullEncoding: false,
-		ColumnType: ColumnType{
+		columnType: columnType{
 			Physical: parquet.Types.Int64,
 			Logical:  schema.NewTimestampLogicalType(false, schema.TimeUnitMicros),
 		},
@@ -165,7 +165,7 @@ func TestParseRawColumnValueCoversSuccessAndErrorBranches(t *testing.T) {
 
 	_, _, err = parseRawColumnValue(sql.RawBytes("9223372036854775808"), column{
 		timestampUnit: schema.TimeUnitUnknown,
-		ColumnType: ColumnType{
+		columnType: columnType{
 			Physical: parquet.Types.Int64,
 			Logical:  schema.NewDecimalLogicalType(19, 0),
 		},
@@ -174,7 +174,7 @@ func TestParseRawColumnValueCoversSuccessAndErrorBranches(t *testing.T) {
 
 	rawBytes := sql.RawBytes("abcd")
 	value, isNull, err = parseRawColumnValue(rawBytes, column{
-		ColumnType: ColumnType{Physical: parquet.Types.ByteArray},
+		columnType: columnType{Physical: parquet.Types.ByteArray},
 	})
 	require.NoError(t, err)
 	require.False(t, isNull)
@@ -182,7 +182,7 @@ func TestParseRawColumnValueCoversSuccessAndErrorBranches(t *testing.T) {
 	require.Equal(t, "abcd", string(value.(parquet.ByteArray)))
 
 	value, isNull, err = parseRawColumnValue(sql.RawBytes("-1.23"), column{
-		ColumnType: ColumnType{
+		columnType: columnType{
 			Physical:   parquet.Types.FixedLenByteArray,
 			Logical:    schema.NewDecimalLogicalType(10, 2),
 			TypeLength: 4,
@@ -195,7 +195,7 @@ func TestParseRawColumnValueCoversSuccessAndErrorBranches(t *testing.T) {
 
 	rawFixedBytes := sql.RawBytes("wxyz")
 	value, isNull, err = parseRawColumnValue(rawFixedBytes, column{
-		ColumnType: ColumnType{
+		columnType: columnType{
 			Physical:   parquet.Types.FixedLenByteArray,
 			TypeLength: 4,
 		},
@@ -206,7 +206,7 @@ func TestParseRawColumnValueCoversSuccessAndErrorBranches(t *testing.T) {
 	require.Equal(t, "wxyz", string(value.(parquet.FixedLenByteArray)))
 
 	_, _, err = parseRawColumnValue(sql.RawBytes("abc"), column{
-		ColumnType: ColumnType{
+		columnType: columnType{
 			Physical:   parquet.Types.FixedLenByteArray,
 			TypeLength: 4,
 		},
@@ -214,7 +214,7 @@ func TestParseRawColumnValueCoversSuccessAndErrorBranches(t *testing.T) {
 	require.ErrorContains(t, err, "width mismatch")
 
 	_, _, err = parseRawColumnValue(sql.RawBytes("abcd"), column{
-		ColumnType: ColumnType{
+		columnType: columnType{
 			Physical:   parquet.Types.FixedLenByteArray,
 			TypeLength: 0,
 		},
@@ -222,14 +222,14 @@ func TestParseRawColumnValueCoversSuccessAndErrorBranches(t *testing.T) {
 	require.ErrorContains(t, err, "invalid fixed-size byte width")
 
 	_, _, err = parseRawColumnValue(sql.RawBytes("v"), column{
-		ColumnType: ColumnType{Physical: parquet.Types.Int96},
+		columnType: columnType{Physical: parquet.Types.Int96},
 	})
 	require.ErrorContains(t, err, "unsupported parquet physical type")
 }
 
 func TestParseRawColumnValueNumericPrimitiveBranches(t *testing.T) {
 	value, isNull, err := parseRawColumnValue(sql.RawBytes("123"), column{
-		ColumnType: ColumnType{Physical: parquet.Types.Int32},
+		columnType: columnType{Physical: parquet.Types.Int32},
 	})
 	require.NoError(t, err)
 	require.False(t, isNull)
@@ -237,38 +237,38 @@ func TestParseRawColumnValueNumericPrimitiveBranches(t *testing.T) {
 
 	value, isNull, err = parseRawColumnValue(sql.RawBytes("456"), column{
 		timestampUnit: schema.TimeUnitUnknown,
-		ColumnType:    ColumnType{Physical: parquet.Types.Int64},
+		columnType:    columnType{Physical: parquet.Types.Int64},
 	})
 	require.NoError(t, err)
 	require.False(t, isNull)
 	require.Equal(t, int64(456), value.(int64))
 
 	value, isNull, err = parseRawColumnValue(sql.RawBytes("1.5"), column{
-		ColumnType: ColumnType{Physical: parquet.Types.Float},
+		columnType: columnType{Physical: parquet.Types.Float},
 	})
 	require.NoError(t, err)
 	require.False(t, isNull)
 	require.Equal(t, float32(1.5), value.(float32))
 
 	_, _, err = parseRawColumnValue(sql.RawBytes("bad-float"), column{
-		ColumnType: ColumnType{Physical: parquet.Types.Float},
+		columnType: columnType{Physical: parquet.Types.Float},
 	})
 	require.Error(t, err)
 
 	value, isNull, err = parseRawColumnValue(sql.RawBytes("2.5"), column{
-		ColumnType: ColumnType{Physical: parquet.Types.Double},
+		columnType: columnType{Physical: parquet.Types.Double},
 	})
 	require.NoError(t, err)
 	require.False(t, isNull)
 	require.Equal(t, float64(2.5), value.(float64))
 
 	_, _, err = parseRawColumnValue(sql.RawBytes("bad-double"), column{
-		ColumnType: ColumnType{Physical: parquet.Types.Double},
+		columnType: columnType{Physical: parquet.Types.Double},
 	})
 	require.Error(t, err)
 
 	_, _, err = parseRawColumnValue(sql.RawBytes("1.28"), column{
-		ColumnType: ColumnType{
+		columnType: columnType{
 			Physical:   parquet.Types.FixedLenByteArray,
 			Logical:    schema.NewDecimalLogicalType(3, 2),
 			TypeLength: 1,
@@ -282,37 +282,37 @@ func TestAppendColumnValueAppendsSupportedPhysicalTypes(t *testing.T) {
 	buffer := &columnBuffer{}
 
 	require.NoError(t, appendColumnValue(buffer, column{
-		ColumnType: ColumnType{Physical: parquet.Types.Boolean},
+		columnType: columnType{Physical: parquet.Types.Boolean},
 	}, true))
 	require.Equal(t, []bool{true}, buffer.boolValues)
 
 	require.NoError(t, appendColumnValue(buffer, column{
-		ColumnType: ColumnType{Physical: parquet.Types.Int32},
+		columnType: columnType{Physical: parquet.Types.Int32},
 	}, int32(7)))
 	require.Equal(t, []int32{7}, buffer.int32Values)
 
 	require.NoError(t, appendColumnValue(buffer, column{
-		ColumnType: ColumnType{Physical: parquet.Types.Int64},
+		columnType: columnType{Physical: parquet.Types.Int64},
 	}, int64(8)))
 	require.Equal(t, []int64{8}, buffer.int64Values)
 
 	require.NoError(t, appendColumnValue(buffer, column{
-		ColumnType: ColumnType{Physical: parquet.Types.Float},
+		columnType: columnType{Physical: parquet.Types.Float},
 	}, float32(1.25)))
 	require.Equal(t, []float32{1.25}, buffer.float32Values)
 
 	require.NoError(t, appendColumnValue(buffer, column{
-		ColumnType: ColumnType{Physical: parquet.Types.Double},
+		columnType: columnType{Physical: parquet.Types.Double},
 	}, float64(2.25)))
 	require.Equal(t, []float64{2.25}, buffer.float64Values)
 
 	require.NoError(t, appendColumnValue(buffer, column{
-		ColumnType: ColumnType{Physical: parquet.Types.ByteArray},
+		columnType: columnType{Physical: parquet.Types.ByteArray},
 	}, parquet.ByteArray([]byte("a"))))
 	require.Equal(t, []parquet.ByteArray{parquet.ByteArray([]byte("a"))}, buffer.byteArrayValues)
 
 	require.NoError(t, appendColumnValue(buffer, column{
-		ColumnType: ColumnType{Physical: parquet.Types.FixedLenByteArray},
+		columnType: columnType{Physical: parquet.Types.FixedLenByteArray},
 	}, parquet.FixedLenByteArray([]byte("bc"))))
 	require.Equal(t, []parquet.FixedLenByteArray{parquet.FixedLenByteArray([]byte("bc"))}, buffer.fixedLenByteArrayValues)
 }

@@ -32,7 +32,7 @@ func buildParquetSchemaFromColumns(columns []*ColumnInfo) (*schema.GroupNode, []
 			return nil, nil, fmt.Errorf("parquet column name is empty")
 		}
 
-		columnType := ToColumnType(columnInfo)
+		columnType := toColumnType(columnInfo)
 		repetition := parquet.Repetitions.Required
 		allowsNullEncoding := columnInfo.Nullable
 		// TIMESTAMP and DATETIME can carry invalid MySQL values. Preserve the
@@ -47,7 +47,7 @@ func buildParquetSchemaFromColumns(columns []*ColumnInfo) (*schema.GroupNode, []
 		timestampUnit := timestampUnitFromLogicalType(columnType.Logical)
 		parsedColumn := column{
 			ColumnInfo:         *columnInfo,
-			ColumnType:         columnType,
+			columnType:         columnType,
 			Repetition:         repetition,
 			allowsNullEncoding: allowsNullEncoding,
 			timestampUnit:      timestampUnit,

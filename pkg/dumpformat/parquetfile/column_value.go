@@ -45,7 +45,7 @@ func parseRawColumnValue(rawValue sql.RawBytes, column column) (any, bool, error
 	case parquet.Types.Int32:
 		s := string(rawValue)
 		if _, ok := column.Logical.(schema.DecimalLogicalType); ok {
-			scaled, err := parseDecimalToScaledInteger(s, column.ColumnType.Scale)
+			scaled, err := parseDecimalToScaledInteger(s, column.columnType.Scale)
 			if err != nil {
 				return nil, false, err
 			}
@@ -71,7 +71,7 @@ func parseRawColumnValue(rawValue sql.RawBytes, column column) (any, bool, error
 			// accepts optional fractional digits.
 			// Since there is no timezone info in temporal values, Go parses them
 			// as UTC. This is counterintuitive but matches our isAdjustedToUTC=false
-			// setting in ToColumnType (local-semantics "as-if UTC" encoding).
+			// setting in toColumnType (local-semantics "as-if UTC" encoding).
 			t, err := time.Parse(time.DateTime, s)
 			if err != nil {
 				if column.allowsNullEncoding {
@@ -82,7 +82,7 @@ func parseRawColumnValue(rawValue sql.RawBytes, column column) (any, bool, error
 			return unixTimestampByUnit(t, column.timestampUnit), false, nil
 		}
 		if _, ok := column.Logical.(schema.DecimalLogicalType); ok {
-			scaled, err := parseDecimalToScaledInteger(s, column.ColumnType.Scale)
+			scaled, err := parseDecimalToScaledInteger(s, column.columnType.Scale)
 			if err != nil {
 				return nil, false, err
 			}
@@ -99,7 +99,7 @@ func parseRawColumnValue(rawValue sql.RawBytes, column column) (any, bool, error
 	case parquet.Types.Float:
 		s := string(rawValue)
 		// Kept for completeness when handling external/custom parquet schema:
-		// current ToColumnType maps SQL FLOAT to parquet.Types.Double.
+		// current toColumnType maps SQL FLOAT to parquet.Types.Double.
 		v, err := strconv.ParseFloat(s, 32)
 		if err != nil {
 			return nil, false, err
@@ -119,7 +119,7 @@ func parseRawColumnValue(rawValue sql.RawBytes, column column) (any, bool, error
 	case parquet.Types.FixedLenByteArray:
 		if _, ok := column.Logical.(schema.DecimalLogicalType); ok {
 			s := string(rawValue)
-			scaled, err := parseDecimalToScaledInteger(s, column.ColumnType.Scale)
+			scaled, err := parseDecimalToScaledInteger(s, column.columnType.Scale)
 			if err != nil {
 				return nil, false, err
 			}

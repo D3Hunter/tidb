@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"database/sql"
 	"errors"
+	"io"
 	"testing"
 
 	"github.com/apache/arrow-go/v18/parquet"
@@ -112,7 +113,7 @@ func TestParquetWriterFlushesRowGroupByMemoryLimit(t *testing.T) {
 	})
 
 	t.Run("accounts byte-array slice header memory", func(t *testing.T) {
-		col := column{ColumnType: ColumnType{Physical: parquet.Types.ByteArray}}
+		col := column{columnType: columnType{Physical: parquet.Types.ByteArray}}
 		require.EqualValues(
 			t,
 			byteArraySliceHeaderBytes+4,
@@ -121,7 +122,7 @@ func TestParquetWriterFlushesRowGroupByMemoryLimit(t *testing.T) {
 	})
 
 	t.Run("accounts fixed-len byte-array slice header memory", func(t *testing.T) {
-		col := column{ColumnType: ColumnType{Physical: parquet.Types.FixedLenByteArray}}
+		col := column{columnType: columnType{Physical: parquet.Types.FixedLenByteArray}}
 		require.EqualValues(
 			t,
 			fixedLenByteArraySliceHeaderBytes+6,
@@ -131,16 +132,16 @@ func TestParquetWriterFlushesRowGroupByMemoryLimit(t *testing.T) {
 
 	t.Run("accounts primitive and unknown physical types", func(t *testing.T) {
 		require.EqualValues(t, 1, accountColumnValueMemoryBytes(column{
-			ColumnType: ColumnType{Physical: parquet.Types.Boolean},
+			columnType: columnType{Physical: parquet.Types.Boolean},
 		}, true))
 		require.EqualValues(t, 4, accountColumnValueMemoryBytes(column{
-			ColumnType: ColumnType{Physical: parquet.Types.Int32},
+			columnType: columnType{Physical: parquet.Types.Int32},
 		}, int32(1)))
 		require.EqualValues(t, 8, accountColumnValueMemoryBytes(column{
-			ColumnType: ColumnType{Physical: parquet.Types.Int64},
+			columnType: columnType{Physical: parquet.Types.Int64},
 		}, int64(1)))
 		require.EqualValues(t, 0, accountColumnValueMemoryBytes(column{
-			ColumnType: ColumnType{Physical: parquet.Types.Int96},
+			columnType: columnType{Physical: parquet.Types.Int96},
 		}, nil))
 	})
 
@@ -179,6 +180,29 @@ func TestParquetWriterFlushesRowGroupByMemoryLimit(t *testing.T) {
 		require.NoError(t, pw.Close())
 		require.Equal(t, 1, sink.closeCalls)
 	})
+}
+
+func BenchmarkParquetWriterParseAndAppendRow(b *testing.B) {
+	pw, err := NewParquetWriter(io.Discard, []*ColumnInfo{
+		{Name: "id", DatabaseTypeName: "INT"},
+	})
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	row := []sql.RawBytes{sql.RawBytes("123")}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if err := pw.parseAndAppendRow(row); err != nil {
+			b.Fatal(err)
+		}
+		// Reset row/accounting state to keep the benchmark focused on per-row
+		// parse+append work, including scratch-buffer reuse.
+		pw.buffers[0].reset()
+		pw.bufferedRows = 0
+		pw.bufferedMemoryBytes = 0
+	}
 }
 
 func TestParquetWriterRecoversAfterRowConversionError(t *testing.T) {
@@ -239,7 +263,7 @@ func TestParquetWriterRecoversAfterRowConversionError(t *testing.T) {
 	t.Run("newColumnBuffer and appendColumnValue validate unsupported cases", func(t *testing.T) {
 		_, err := newColumnBuffer(column{
 			ColumnInfo: ColumnInfo{Name: "f"},
-			ColumnType: ColumnType{
+			columnType: columnType{
 				Physical:   parquet.Types.FixedLenByteArray,
 				TypeLength: 0,
 			},
@@ -248,7 +272,7 @@ func TestParquetWriterRecoversAfterRowConversionError(t *testing.T) {
 
 		_, err = newColumnBuffer(column{
 			ColumnInfo: ColumnInfo{Name: "u"},
-			ColumnType: ColumnType{
+			columnType: columnType{
 				Physical: parquet.Types.Int96,
 			},
 		}, 1)
@@ -257,7 +281,7 @@ func TestParquetWriterRecoversAfterRowConversionError(t *testing.T) {
 		_, err = newColumnBuffers([]column{
 			{
 				ColumnInfo: ColumnInfo{Name: "bad"},
-				ColumnType: ColumnType{
+				columnType: columnType{
 					Physical:   parquet.Types.FixedLenByteArray,
 					TypeLength: 0,
 				},
@@ -266,7 +290,7 @@ func TestParquetWriterRecoversAfterRowConversionError(t *testing.T) {
 		require.ErrorContains(t, err, "init parquet buffer for column bad")
 
 		err = appendColumnValue(&columnBuffer{}, column{
-			ColumnType: ColumnType{Physical: parquet.Types.Int96},
+			columnType: columnType{Physical: parquet.Types.Int96},
 		}, nil)
 		require.ErrorContains(t, err, "unsupported parquet physical type")
 	})
@@ -274,7 +298,7 @@ func TestParquetWriterRecoversAfterRowConversionError(t *testing.T) {
 	t.Run("newColumnBuffer initializes supported float and double columns", func(t *testing.T) {
 		floatBuffer, err := newColumnBuffer(column{
 			ColumnInfo: ColumnInfo{Name: "f"},
-			ColumnType: ColumnType{
+			columnType: columnType{
 				Physical: parquet.Types.Float,
 			},
 		}, 2)
@@ -283,7 +307,7 @@ func TestParquetWriterRecoversAfterRowConversionError(t *testing.T) {
 
 		doubleBuffer, err := newColumnBuffer(column{
 			ColumnInfo: ColumnInfo{Name: "d"},
-			ColumnType: ColumnType{
+			columnType: columnType{
 				Physical: parquet.Types.Double,
 			},
 		}, 2)
@@ -308,7 +332,7 @@ func TestParquetWriterRecoversAfterRowConversionError(t *testing.T) {
 			require.NoError(t, err)
 
 			err = writeColumnBatch(columnWriter, column{
-				ColumnType: ColumnType{Physical: parquet.Types.Float},
+				columnType: columnType{Physical: parquet.Types.Float},
 			}, columnBuffer{
 				float32Values: []float32{1.5},
 			})
@@ -326,7 +350,7 @@ func TestParquetWriterRecoversAfterRowConversionError(t *testing.T) {
 			require.NoError(t, err)
 
 			err = writeColumnBatch(columnWriter, column{
-				ColumnType: ColumnType{Physical: parquet.Types.Double},
+				columnType: columnType{Physical: parquet.Types.Double},
 			}, columnBuffer{
 				float64Values: []float64{2.5},
 			})
@@ -349,7 +373,7 @@ func TestParquetWriterRecoversAfterRowConversionError(t *testing.T) {
 		require.NoError(t, err)
 
 		err = writeColumnBatch(wrappedColumnChunkWriter{ColumnChunkWriter: columnWriter}, column{
-			ColumnType: ColumnType{Physical: parquet.Types.Int32},
+			columnType: columnType{Physical: parquet.Types.Int32},
 		}, columnBuffer{
 			int32Values: []int32{1},
 		})

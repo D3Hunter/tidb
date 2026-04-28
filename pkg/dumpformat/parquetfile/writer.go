@@ -47,8 +47,8 @@ type ColumnInfo struct {
 	Scale            int64
 }
 
-// ColumnType describes the physical and logical Parquet type for a SQL column.
-type ColumnType struct {
+// columnType describes the physical and logical Parquet type for a SQL column.
+type columnType struct {
 	Physical   parquet.Type
 	Logical    schema.LogicalType
 	TypeLength int
@@ -58,7 +58,7 @@ type ColumnType struct {
 
 type column struct {
 	ColumnInfo
-	ColumnType
+	columnType
 	Repetition parquet.Repetition
 	// allowsNullEncoding is intentionally broader than SQL nullability: besides
 	// nullable columns, it also covers timestamp/datetime compatibility fallback
@@ -106,6 +106,7 @@ type ParquetWriter struct {
 	output                   *countingWriter
 	columns                  []column
 	buffers                  []columnBuffer
+	parsedValuesScratch      []parsedColumnValue
 	rowGroupMemoryLimitBytes int64
 	bufferedRows             int
 	bufferedMemoryBytes      int64
@@ -200,7 +201,7 @@ func (pw *ParquetWriter) Write(src []sql.RawBytes) error {
 	if pw.closed {
 		return fmt.Errorf("parquet writer is closed")
 	}
-	if err := pw.normalizeRow(src); err != nil {
+	if err := pw.parseAndAppendRow(src); err != nil {
 		return err
 	}
 	if pw.rowGroupMemoryLimitBytes > 0 && pw.bufferedMemoryBytes >= pw.rowGroupMemoryLimitBytes {
@@ -237,12 +238,17 @@ func (pw *ParquetWriter) totalWrittenBytes() int64 {
 	return pw.output.writtenBytes
 }
 
-func (pw *ParquetWriter) normalizeRow(rawRow []sql.RawBytes) error {
+func (pw *ParquetWriter) parseAndAppendRow(rawRow []sql.RawBytes) error {
 	if len(rawRow) != len(pw.columns) {
 		return fmt.Errorf("parquet row has %d values, expected %d", len(rawRow), len(pw.columns))
 	}
 
-	parsedValues := make([]parsedColumnValue, len(rawRow))
+	if cap(pw.parsedValuesScratch) < len(rawRow) {
+		pw.parsedValuesScratch = make([]parsedColumnValue, len(rawRow))
+	} else {
+		pw.parsedValuesScratch = pw.parsedValuesScratch[:len(rawRow)]
+	}
+	parsedValues := pw.parsedValuesScratch
 	for i, rawValue := range rawRow {
 		parsedValue, err := pw.parseColumnValue(i, rawValue)
 		if err != nil {

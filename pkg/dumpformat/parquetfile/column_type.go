@@ -22,40 +22,41 @@ import (
 	"github.com/apache/arrow-go/v18/parquet/schema"
 )
 
-// ToColumnType converts database type to parquet column type.
+// toColumnType converts database type to parquet column type.
 // ColumnInfo.DatabaseTypeName must come from database/sql
 // ColumnType.DatabaseTypeName().
 // With MySQL drivers, temporal types are reported as base names
 // (e.g. TIMESTAMP/DATETIME) without precision suffixes such as "(6)".
 //
-// go-sql-driver/mysql DatabaseTypeName() doesn't emit below types, we don't
-// handle them too:
+// go-sql-driver/mysql DatabaseTypeName() does not emit the type aliases below.
+// They are intentionally not specialized and fall back to BYTE_ARRAY so unknown
+// or driver-specific names remain forward compatible with string-like export.
 // NUMERIC, FIXED, UNSIGNED MEDIUMINT, VECTOR, NCHAR, NVARCHAR, CHARACTER,
 // VARCHARACTER, SQL_TSI_YEAR, VAR_STRING, LONG, INTEGER, INT1, INT2, INT3, INT8,
 // BOOL, BOOLEAN, REAL, DOUBLE PRECISION,
-func ToColumnType(columnInfo *ColumnInfo) ColumnType {
-	columnType := strings.ToUpper(strings.TrimSpace(columnInfo.DatabaseTypeName))
-	switch columnType {
+func toColumnType(columnInfo *ColumnInfo) columnType {
+	dbTypeName := strings.ToUpper(strings.TrimSpace(columnInfo.DatabaseTypeName))
+	switch dbTypeName {
 	case "CHAR", "VARCHAR", "TEXT", "TINYTEXT", "MEDIUMTEXT", "LONGTEXT",
 		"DATE", "TIME", "SET", "JSON", "ENUM", "NULL", "GEOMETRY":
 		// "NULL" in DatabaseTypeName() means the server reported the column
 		// metadata type as MySQL protocol MYSQL_TYPE_NULL.
 		// Typical case: SELECT NULL AS c -> DatabaseTypeName() for c is "NULL".
-		return ColumnType{Physical: parquet.Types.ByteArray, Logical: schema.StringLogicalType{}, TypeLength: -1}
+		return columnType{Physical: parquet.Types.ByteArray, Logical: schema.StringLogicalType{}, TypeLength: -1}
 	case "BLOB", "TINYBLOB", "MEDIUMBLOB", "LONGBLOB", "BINARY", "VARBINARY", "BIT":
-		return ColumnType{Physical: parquet.Types.ByteArray, TypeLength: -1}
+		return columnType{Physical: parquet.Types.ByteArray, TypeLength: -1}
 	case "TIMESTAMP", "DATETIME":
-		return ColumnType{Physical: parquet.Types.Int64, Logical: schema.NewTimestampLogicalType(false, schema.TimeUnitMicros), TypeLength: -1}
+		return columnType{Physical: parquet.Types.Int64, Logical: schema.NewTimestampLogicalType(false, schema.TimeUnitMicros), TypeLength: -1}
 	case "YEAR", "TINYINT", "SMALLINT", "MEDIUMINT", "UNSIGNED TINYINT", "UNSIGNED SMALLINT", "INT":
 		// UNSIGNED MEDIUMINT is returned as MEDIUMINT in the driver, it's fine
 		// to use int32 to store it.
-		return ColumnType{Physical: parquet.Types.Int32, TypeLength: -1}
+		return columnType{Physical: parquet.Types.Int32, TypeLength: -1}
 	case "BIGINT", "UNSIGNED INT":
-		return ColumnType{Physical: parquet.Types.Int64, TypeLength: -1}
+		return columnType{Physical: parquet.Types.Int64, TypeLength: -1}
 	case "DECIMAL":
 		return decimalColumnType(columnInfo)
 	case "UNSIGNED BIGINT":
-		return ColumnType{
+		return columnType{
 			Physical:   parquet.Types.FixedLenByteArray,
 			Logical:    schema.NewDecimalLogicalType(20, 0),
 			TypeLength: 9,
@@ -67,15 +68,15 @@ func ToColumnType(columnInfo *ColumnInfo) ColumnType {
 		// FLOAT expressions in double precision. Exporting as Parquet FLOAT (32-bit)
 		// is not safe for compatibility because intermediate/query results may need
 		// more precision than 32-bit can preserve.
-		return ColumnType{Physical: parquet.Types.Double, TypeLength: -1}
+		return columnType{Physical: parquet.Types.Double, TypeLength: -1}
 	case "DOUBLE":
-		return ColumnType{Physical: parquet.Types.Double, TypeLength: -1}
+		return columnType{Physical: parquet.Types.Double, TypeLength: -1}
 	default:
-		return ColumnType{Physical: parquet.Types.ByteArray, TypeLength: -1}
+		return columnType{Physical: parquet.Types.ByteArray, TypeLength: -1}
 	}
 }
 
-func decimalColumnType(columnInfo *ColumnInfo) ColumnType {
+func decimalColumnType(columnInfo *ColumnInfo) columnType {
 	precision, scale := int(columnInfo.Precision), int(columnInfo.Scale)
 	// Keep an interoperability-first mapping here, not just raw Parquet limits:
 	// - Parquet DECIMAL itself is not capped at 38 digits when stored as
@@ -85,11 +86,11 @@ func decimalColumnType(columnInfo *ColumnInfo) ColumnType {
 	//   (INT32/INT64/FIXED_LEN_BYTE_ARRAY), and represent larger precision as
 	//   UTF-8 strings in BYTE_ARRAY to avoid reader incompatibilities.
 	if precision <= 0 || precision > 38 {
-		return ColumnType{Physical: parquet.Types.ByteArray, Logical: schema.StringLogicalType{}, TypeLength: -1}
+		return columnType{Physical: parquet.Types.ByteArray, Logical: schema.StringLogicalType{}, TypeLength: -1}
 	}
 	decimalLogicalType := schema.NewDecimalLogicalType(int32(precision), int32(scale))
 	if precision <= 9 {
-		return ColumnType{
+		return columnType{
 			Physical:   parquet.Types.Int32,
 			Logical:    decimalLogicalType,
 			TypeLength: -1,
@@ -98,7 +99,7 @@ func decimalColumnType(columnInfo *ColumnInfo) ColumnType {
 		}
 	}
 	if precision <= 18 {
-		return ColumnType{
+		return columnType{
 			Physical:   parquet.Types.Int64,
 			Logical:    decimalLogicalType,
 			TypeLength: -1,
@@ -108,7 +109,7 @@ func decimalColumnType(columnInfo *ColumnInfo) ColumnType {
 	}
 
 	typeLength := decimalFixedLengthBytesForPrecision(precision)
-	return ColumnType{
+	return columnType{
 		Physical:   parquet.Types.FixedLenByteArray,
 		Logical:    decimalLogicalType,
 		TypeLength: typeLength,
