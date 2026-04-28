@@ -146,7 +146,7 @@ func WithDataPageSize(pageSize int64) WriterOption {
 }
 
 // WithRowGroupMemoryLimit sets the row-group flush threshold by accounted
-// in-memory bytes.
+// in-memory bytes. Non-positive values are ignored and keep the default limit.
 func WithRowGroupMemoryLimit(limitBytes int64) WriterOption {
 	return func(options writerOptions) writerOptions {
 		if limitBytes > 0 {
@@ -196,6 +196,8 @@ func newWriterOptions(options []WriterOption) writerOptions {
 }
 
 // Write appends one row from SQL raw column bytes.
+// Any write failure makes this writer unusable; callers should stop writing
+// and close it.
 func (pw *ParquetWriter) Write(src []sql.RawBytes) error {
 	if pw.closed {
 		return fmt.Errorf("parquet writer is closed")
