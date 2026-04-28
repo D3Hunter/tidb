@@ -56,7 +56,7 @@ func newColumnBuffers(columns []column, capacity int) ([]columnBuffer, error) {
 
 func newColumnBuffer(column column, capacity int) (columnBuffer, error) {
 	buffer := columnBuffer{}
-	if column.Optional {
+	if column.allowsNullEncoding {
 		buffer.defLevels = make([]int16, 0, capacity)
 	}
 

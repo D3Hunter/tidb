@@ -30,11 +30,11 @@ import (
 func TestParquetWriterWritesArrowReadableRows(t *testing.T) {
 	var buf bytes.Buffer
 	columns := []*ColumnInfo{
-		{Name: "id", Type: "INT"},
-		{Name: "name", Type: "VARCHAR", Nullable: true},
-		{Name: "price", Type: "DECIMAL", Precision: 10, Scale: 2},
-		{Name: "created_at", Type: "DATETIME"},
-		{Name: "flag", Type: "BOOLEAN", Nullable: true},
+		{Name: "id", DatabaseTypeName: "INT"},
+		{Name: "name", DatabaseTypeName: "VARCHAR", Nullable: true},
+		{Name: "price", DatabaseTypeName: "DECIMAL", Precision: 10, Scale: 2},
+		{Name: "created_at", DatabaseTypeName: "DATETIME"},
+		{Name: "flag", DatabaseTypeName: "BOOLEAN", Nullable: true},
 	}
 
 	pw, err := NewParquetWriter(
@@ -95,14 +95,14 @@ func TestParquetWriterWritesArrowReadableRows(t *testing.T) {
 		_, err = NewParquetWriter(&bytes.Buffer{}, []*ColumnInfo{nil})
 		require.ErrorContains(t, err, "parquet column info is nil")
 
-		_, err = NewParquetWriter(&bytes.Buffer{}, []*ColumnInfo{{Name: "", Type: "INT"}})
+		_, err = NewParquetWriter(&bytes.Buffer{}, []*ColumnInfo{{Name: "", DatabaseTypeName: "INT"}})
 		require.ErrorContains(t, err, "parquet column name is empty")
 	})
 
 	t.Run("Close closes writer and Write fails afterwards", func(t *testing.T) {
 		var buf bytes.Buffer
 		pw, err := NewParquetWriter(&buf, []*ColumnInfo{
-			{Name: "id", Type: "INT"},
+			{Name: "id", DatabaseTypeName: "INT"},
 		})
 		require.NoError(t, err)
 		require.NoError(t, pw.Write([]sql.RawBytes{sql.RawBytes("7")}))
@@ -114,7 +114,7 @@ func TestParquetWriterWritesArrowReadableRows(t *testing.T) {
 func TestParquetWriterMapsUnsignedBigIntAsFixedDecimal(t *testing.T) {
 	var buf bytes.Buffer
 	pw, err := NewParquetWriter(&buf, []*ColumnInfo{
-		{Name: "u", Type: "UNSIGNED BIGINT"},
+		{Name: "u", DatabaseTypeName: "UNSIGNED BIGINT"},
 	}, WithCompression(compress.Codecs.Uncompressed))
 	require.NoError(t, err)
 	require.NoError(t, pw.Write([]sql.RawBytes{sql.RawBytes("18446744073709551615")}))

@@ -23,7 +23,8 @@ import (
 )
 
 // ToColumnType converts database type to parquet column type.
-// ColumnInfo.Type comes from database/sql ColumnType.DatabaseTypeName().
+// ColumnInfo.DatabaseTypeName must come from database/sql
+// ColumnType.DatabaseTypeName().
 // With MySQL drivers, temporal types are reported as base names
 // (e.g. TIMESTAMP/DATETIME) without precision suffixes such as "(6)".
 //
@@ -33,7 +34,7 @@ import (
 // VARCHARACTER, SQL_TSI_YEAR, VAR_STRING, LONG, INTEGER, INT1, INT2, INT3, INT8,
 // BOOL, BOOLEAN, REAL, DOUBLE PRECISION,
 func ToColumnType(columnInfo *ColumnInfo) ColumnType {
-	columnType := strings.ToUpper(strings.TrimSpace(columnInfo.Type))
+	columnType := strings.ToUpper(strings.TrimSpace(columnInfo.DatabaseTypeName))
 	switch columnType {
 	case "CHAR", "VARCHAR", "TEXT", "TINYTEXT", "MEDIUMTEXT", "LONGTEXT",
 		"DATE", "TIME", "SET", "JSON", "ENUM", "NULL", "GEOMETRY":

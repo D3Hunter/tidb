@@ -72,7 +72,7 @@ func parseRawColumnValue(rawValue sql.RawBytes, column column) (any, bool, error
 			// setting in ToColumnType (local-semantics "as-if UTC" encoding).
 			t, err := time.Parse(time.DateTime, s)
 			if err != nil {
-				if column.Optional {
+				if column.allowsNullEncoding {
 					return nil, true, nil
 				}
 				return nil, false, err
@@ -192,7 +192,7 @@ func accountColumnValueMemoryBytes(column column, value any) int64 {
 
 func writeColumnBatch(columnWriter file.ColumnChunkWriter, column column, buffer columnBuffer) error {
 	var defLevels []int16
-	if column.Optional {
+	if column.allowsNullEncoding {
 		defLevels = buffer.defLevels
 	}
 

@@ -17,6 +17,7 @@ package parquetfile
 import (
 	"bytes"
 	"database/sql"
+	"errors"
 	"testing"
 
 	"github.com/apache/arrow-go/v18/parquet"
@@ -26,10 +27,29 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var errInjectedSinkWriteFailure = errors.New("forced sink write failure")
+
+type writeFailingCloser struct {
+	failWrites bool
+	closeCalls int
+}
+
+func (w *writeFailingCloser) Write(p []byte) (int, error) {
+	if w.failWrites {
+		return 0, errInjectedSinkWriteFailure
+	}
+	return len(p), nil
+}
+
+func (w *writeFailingCloser) Close() error {
+	w.closeCalls++
+	return nil
+}
+
 func TestParquetWriterCopiesByteRowsBeforeClose(t *testing.T) {
 	var buf bytes.Buffer
 	pw, err := NewParquetWriter(&buf, []*ColumnInfo{
-		{Name: "name", Type: "VARCHAR"},
+		{Name: "name", DatabaseTypeName: "VARCHAR"},
 	})
 	require.NoError(t, err)
 
@@ -47,7 +67,7 @@ func TestParquetWriterCopiesByteRowsBeforeClose(t *testing.T) {
 	t.Run("Close without buffered rows is safe", func(t *testing.T) {
 		var closeBuf bytes.Buffer
 		closePW, err := NewParquetWriter(&closeBuf, []*ColumnInfo{
-			{Name: "name", Type: "VARCHAR"},
+			{Name: "name", DatabaseTypeName: "VARCHAR"},
 		})
 		require.NoError(t, err)
 		require.NoError(t, closePW.Close())
@@ -56,7 +76,7 @@ func TestParquetWriterCopiesByteRowsBeforeClose(t *testing.T) {
 	})
 }
 
-func TestParquetWriterCapsMaxRowGroupLength(t *testing.T) {
+func TestParquetWriterFlushesRowGroupByMemoryLimit(t *testing.T) {
 	localOptions := newWriterOptions([]WriterOption{
 		WithCompression(compress.Codecs.Uncompressed),
 		WithDataPageSize(2048),
@@ -69,13 +89,13 @@ func TestParquetWriterCapsMaxRowGroupLength(t *testing.T) {
 
 	defaultOptions := defaultWriterOptions()
 	defaultProps := parquet.NewWriterProperties(defaultOptions.writerProperties...)
-	require.Equal(t, DefaultCompressionType, defaultProps.Compression())
+	require.Equal(t, defaultCompressionType, defaultProps.Compression())
 	require.EqualValues(t, defaultRowGroupMemoryLimitBytes, defaultOptions.rowGroupMemoryLimitBytes)
 
 	t.Run("flushes row group by accounted memory bytes", func(t *testing.T) {
 		var buf bytes.Buffer
 		pw, err := NewParquetWriter(&buf, []*ColumnInfo{
-			{Name: "name", Type: "VARCHAR"},
+			{Name: "name", DatabaseTypeName: "VARCHAR"},
 		}, WithRowGroupMemoryLimit(4))
 		require.NoError(t, err)
 
@@ -127,7 +147,7 @@ func TestParquetWriterCapsMaxRowGroupLength(t *testing.T) {
 	t.Run("estimates written bytes plus buffered bytes", func(t *testing.T) {
 		var buf bytes.Buffer
 		pw, err := NewParquetWriter(&buf, []*ColumnInfo{
-			{Name: "name", Type: "VARCHAR"},
+			{Name: "name", DatabaseTypeName: "VARCHAR"},
 		}, WithRowGroupMemoryLimit(defaultRowGroupMemoryLimitBytes))
 		require.NoError(t, err)
 
@@ -142,13 +162,30 @@ func TestParquetWriterCapsMaxRowGroupLength(t *testing.T) {
 		require.Equal(t, uint64(pw.totalWrittenBytes()), pw.EstimateFileSize())
 		require.NoError(t, pw.Close())
 	})
+
+	t.Run("Close still closes sink when flush fails", func(t *testing.T) {
+		sink := &writeFailingCloser{}
+		pw, err := NewParquetWriter(sink, []*ColumnInfo{
+			{Name: "name", DatabaseTypeName: "VARCHAR"},
+		})
+		require.NoError(t, err)
+		require.NoError(t, pw.Write([]sql.RawBytes{sql.RawBytes("alice")}))
+
+		sink.failWrites = true
+		err = pw.Close()
+		require.ErrorContains(t, err, errInjectedSinkWriteFailure.Error())
+		require.Equal(t, 1, sink.closeCalls)
+
+		require.NoError(t, pw.Close())
+		require.Equal(t, 1, sink.closeCalls)
+	})
 }
 
 func TestParquetWriterRecoversAfterRowConversionError(t *testing.T) {
 	var buf bytes.Buffer
 	pw, err := NewParquetWriter(&buf, []*ColumnInfo{
-		{Name: "id", Type: "INT"},
-		{Name: "flag", Type: "INT"},
+		{Name: "id", DatabaseTypeName: "INT"},
+		{Name: "flag", DatabaseTypeName: "INT"},
 	})
 	require.NoError(t, err)
 
@@ -180,8 +217,8 @@ func TestParquetWriterRecoversAfterRowConversionError(t *testing.T) {
 	t.Run("Write validates row length and required NULL", func(t *testing.T) {
 		var localBuf bytes.Buffer
 		localPW, err := NewParquetWriter(&localBuf, []*ColumnInfo{
-			{Name: "id", Type: "INT"},
-			{Name: "name", Type: "VARCHAR"},
+			{Name: "id", DatabaseTypeName: "INT"},
+			{Name: "name", DatabaseTypeName: "VARCHAR"},
 		})
 		require.NoError(t, err)
 
@@ -303,7 +340,7 @@ func TestParquetWriterRecoversAfterRowConversionError(t *testing.T) {
 	t.Run("writeColumnBatch returns error for unsupported concrete writer type", func(t *testing.T) {
 		var out bytes.Buffer
 		pw, err := NewParquetWriter(&out, []*ColumnInfo{
-			{Name: "id", Type: "INT"},
+			{Name: "id", DatabaseTypeName: "INT"},
 		})
 		require.NoError(t, err)
 

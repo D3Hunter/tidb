@@ -94,7 +94,7 @@ func TestParseRawColumnValueCoversSuccessAndErrorBranches(t *testing.T) {
 	require.ErrorContains(t, err, "does not fit in INT32")
 
 	value, isNull, err = parseRawColumnValue(sql.RawBytes("2024-01-02 03:04:05"), column{
-		Optional: true,
+		allowsNullEncoding: true,
 		ColumnType: ColumnType{
 			Physical: parquet.Types.Int64,
 			Logical:  schema.NewTimestampLogicalType(false, schema.TimeUnitMicros),
@@ -106,7 +106,7 @@ func TestParseRawColumnValueCoversSuccessAndErrorBranches(t *testing.T) {
 	require.Equal(t, time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC).UnixMicro(), value.(int64))
 
 	value, isNull, err = parseRawColumnValue(sql.RawBytes("2024-01-02 03:04:05.123"), column{
-		Optional: true,
+		allowsNullEncoding: true,
 		ColumnType: ColumnType{
 			Physical: parquet.Types.Int64,
 			Logical:  schema.NewTimestampLogicalType(false, schema.TimeUnitMillis),
@@ -118,7 +118,7 @@ func TestParseRawColumnValueCoversSuccessAndErrorBranches(t *testing.T) {
 	require.Equal(t, time.Date(2024, 1, 2, 3, 4, 5, 123000000, time.UTC).UnixMilli(), value.(int64))
 
 	value, isNull, err = parseRawColumnValue(sql.RawBytes("2024-01-02 03:04:05.123456"), column{
-		Optional: true,
+		allowsNullEncoding: true,
 		ColumnType: ColumnType{
 			Physical: parquet.Types.Int64,
 			Logical:  schema.NewTimestampLogicalType(false, schema.TimeUnitMicros),
@@ -130,7 +130,7 @@ func TestParseRawColumnValueCoversSuccessAndErrorBranches(t *testing.T) {
 	require.Equal(t, time.Date(2024, 1, 2, 3, 4, 5, 123456000, time.UTC).UnixMicro(), value.(int64))
 
 	value, isNull, err = parseRawColumnValue(sql.RawBytes("2024-01-02 03:04:05.1"), column{
-		Optional: true,
+		allowsNullEncoding: true,
 		ColumnType: ColumnType{
 			Physical: parquet.Types.Int64,
 			Logical:  schema.NewTimestampLogicalType(false, schema.TimeUnitMicros),
@@ -142,7 +142,7 @@ func TestParseRawColumnValueCoversSuccessAndErrorBranches(t *testing.T) {
 	require.Equal(t, time.Date(2024, 1, 2, 3, 4, 5, 100000000, time.UTC).UnixMicro(), value.(int64))
 
 	value, isNull, err = parseRawColumnValue(sql.RawBytes("0000-00-00 00:00:00"), column{
-		Optional: true,
+		allowsNullEncoding: true,
 		ColumnType: ColumnType{
 			Physical: parquet.Types.Int64,
 			Logical:  schema.NewTimestampLogicalType(false, schema.TimeUnitMicros),
@@ -154,7 +154,7 @@ func TestParseRawColumnValueCoversSuccessAndErrorBranches(t *testing.T) {
 	require.Nil(t, value)
 
 	_, _, err = parseRawColumnValue(sql.RawBytes("0000-00-00 00:00:00"), column{
-		Optional: false,
+		allowsNullEncoding: false,
 		ColumnType: ColumnType{
 			Physical: parquet.Types.Int64,
 			Logical:  schema.NewTimestampLogicalType(false, schema.TimeUnitMicros),

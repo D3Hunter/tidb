@@ -16,6 +16,7 @@ package parquetfile
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"io"
 
@@ -26,8 +27,8 @@ import (
 	"github.com/docker/go-units"
 )
 
-// DefaultCompressionType is the default Parquet compression codec.
-var DefaultCompressionType = compress.Codecs.Zstd
+// defaultCompressionType is the default Parquet compression codec.
+var defaultCompressionType = compress.Codecs.Zstd
 
 const (
 	defaultRowGroupMemoryLimitBytes = 120 * units.MiB
@@ -36,11 +37,14 @@ const (
 
 // ColumnInfo describes a SQL result column to be written into Parquet.
 type ColumnInfo struct {
-	Name      string
-	Type      string
-	Nullable  bool
-	Precision int64
-	Scale     int64
+	Name string
+	// DatabaseTypeName must be the canonical database/sql
+	// ColumnType.DatabaseTypeName() value (for example: TIMESTAMP, DATETIME,
+	// DECIMAL, VARCHAR).
+	DatabaseTypeName string
+	Nullable         bool
+	Precision        int64
+	Scale            int64
 }
 
 // ColumnType describes the physical and logical Parquet type for a SQL column.
@@ -56,7 +60,10 @@ type column struct {
 	ColumnInfo
 	ColumnType
 	Repetition parquet.Repetition
-	Optional   bool
+	// allowsNullEncoding is intentionally broader than SQL nullability: besides
+	// nullable columns, it also covers timestamp/datetime compatibility fallback
+	// where invalid MySQL temporal values are encoded as NULL.
+	allowsNullEncoding bool
 	// timestampUnit caches TimestampLogicalType.TimeUnit() to avoid calling it
 	// for every row.
 	timestampUnit schema.TimeUnitType
@@ -116,7 +123,7 @@ type WriterOption func(writerOptions) writerOptions
 func defaultWriterOptions() writerOptions {
 	return writerOptions{
 		writerProperties: []parquet.WriterProperty{
-			parquet.WithCompression(DefaultCompressionType),
+			parquet.WithCompression(defaultCompressionType),
 		},
 		rowGroupMemoryLimitBytes: defaultRowGroupMemoryLimitBytes,
 	}
@@ -207,11 +214,10 @@ func (pw *ParquetWriter) Close() error {
 	if pw.closed {
 		return nil
 	}
-	if err := pw.flushRows(); err != nil {
-		return err
-	}
 	pw.closed = true
-	return pw.writer.Close()
+	flushErr := pw.flushRows()
+	closeErr := pw.writer.Close()
+	return errors.Join(flushErr, closeErr)
 }
 
 // EstimateFileSize returns an estimated final file size by summing bytes
@@ -288,7 +294,7 @@ func (pw *ParquetWriter) flushRows() error {
 func (pw *ParquetWriter) parseColumnValue(colIdx int, rawValue sql.RawBytes) (parsedColumnValue, error) {
 	column := pw.columns[colIdx]
 	if rawValue == nil {
-		if !column.Optional {
+		if !column.allowsNullEncoding {
 			return parsedColumnValue{}, fmt.Errorf("required column receives NULL")
 		}
 		return parsedColumnValue{isNull: true}, nil
@@ -305,7 +311,7 @@ func (pw *ParquetWriter) appendParsedColumnValue(colIdx int, parsedValue parsedC
 	column := pw.columns[colIdx]
 	buffer := &pw.buffers[colIdx]
 
-	if column.Optional {
+	if column.allowsNullEncoding {
 		pw.bufferedMemoryBytes += definitionLevelMemoryBytes
 		if parsedValue.isNull {
 			buffer.defLevels = append(buffer.defLevels, 0)
