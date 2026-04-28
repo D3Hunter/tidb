@@ -23,22 +23,34 @@ import (
 )
 
 // ToColumnType converts database type to parquet column type.
+// ColumnInfo.Type comes from database/sql ColumnType.DatabaseTypeName().
+// With MySQL drivers, temporal types are reported as base names
+// (e.g. TIMESTAMP/DATETIME) without precision suffixes such as "(6)".
+//
+// go-sql-driver/mysql DatabaseTypeName() doesn't emit below types:
+// NUMERIC, FIXED, UNSIGNED MEDIUMINT, VECTOR, NCHAR, NVARCHAR, CHARACTER,
+// VARCHARACTER, SQL_TSI_YEAR, VAR_STRING, LONG, INTEGER, INT1, INT2, INT3, INT8,
+// BOOL, BOOLEAN, REAL, DOUBLE PRECISION,
 func ToColumnType(columnInfo *ColumnInfo) ColumnType {
-	columnType := normalizeColumnType(columnInfo.Type)
+	columnType := strings.ToUpper(strings.TrimSpace(columnInfo.Type))
 	switch columnType {
-	case "CHAR", "VARCHAR", "DATE", "TIME", "TEXT", "TINYTEXT", "MEDIUMTEXT", "LONGTEXT", "SET", "JSON", "VECTOR":
-		return ColumnType{Physical: parquet.Types.ByteArray, Logical: schema.StringLogicalType{}, TypeLength: -1}
-	case "ENUM":
+	case "CHAR", "VARCHAR", "TEXT", "TINYTEXT", "MEDIUMTEXT", "LONGTEXT",
+		"DATE", "TIME", "SET", "JSON", "ENUM", "NULL", "GEOMETRY":
+		// "NULL" in DatabaseTypeName() means the server reported the column
+		// metadata type as MySQL protocol MYSQL_TYPE_NULL.
+		// Typical case: SELECT NULL AS c -> DatabaseTypeName() for c is "NULL".
 		return ColumnType{Physical: parquet.Types.ByteArray, Logical: schema.StringLogicalType{}, TypeLength: -1}
 	case "BLOB", "TINYBLOB", "MEDIUMBLOB", "LONGBLOB", "BINARY", "VARBINARY", "BIT":
 		return ColumnType{Physical: parquet.Types.ByteArray, TypeLength: -1}
 	case "TIMESTAMP", "DATETIME":
 		return ColumnType{Physical: parquet.Types.Int64, Logical: schema.NewTimestampLogicalType(false, schema.TimeUnitMicros), TypeLength: -1}
-	case "YEAR", "TINYINT", "SMALLINT", "MEDIUMINT", "UNSIGNED TINYINT", "UNSIGNED SMALLINT", "INT", "UNSIGNED MEDIUMINT":
+	case "YEAR", "TINYINT", "SMALLINT", "MEDIUMINT", "UNSIGNED TINYINT", "UNSIGNED SMALLINT", "INT":
+		// UNSIGNED MEDIUMINT is returned as MEDIUMINT in the driver, it's fine
+		// to use int32 to store it.
 		return ColumnType{Physical: parquet.Types.Int32, TypeLength: -1}
 	case "BIGINT", "UNSIGNED INT":
 		return ColumnType{Physical: parquet.Types.Int64, TypeLength: -1}
-	case "DECIMAL", "NUMERIC":
+	case "DECIMAL":
 		return decimalColumnType(columnInfo)
 	case "UNSIGNED BIGINT":
 		return ColumnType{
@@ -56,29 +68,9 @@ func ToColumnType(columnInfo *ColumnInfo) ColumnType {
 		return ColumnType{Physical: parquet.Types.Double, TypeLength: -1}
 	case "DOUBLE":
 		return ColumnType{Physical: parquet.Types.Double, TypeLength: -1}
-	}
-
-	// Other database, like MariaDB.
-	switch columnType {
-	case "NCHAR", "NVARCHAR", "CHARACTER", "VARCHARACTER", "SQL_TSI_YEAR", "NULL", "VAR_STRING", "GEOMETRY", "LONG":
+	default:
 		return ColumnType{Physical: parquet.Types.ByteArray, TypeLength: -1}
-	case "INTEGER", "INT1", "INT2", "INT3":
-		return ColumnType{Physical: parquet.Types.Int32, TypeLength: -1}
-	case "INT8":
-		return ColumnType{Physical: parquet.Types.Int64, TypeLength: -1}
-	case "BOOL", "BOOLEAN":
-		return ColumnType{Physical: parquet.Types.Boolean, TypeLength: -1}
-	case "REAL", "DOUBLE PRECISION", "FIXED":
-		return ColumnType{Physical: parquet.Types.Double, TypeLength: -1}
 	}
-	return ColumnType{Physical: parquet.Types.ByteArray, TypeLength: -1}
-}
-
-func normalizeColumnType(columnType string) string {
-	// ColumnInfo.Type comes from database/sql ColumnType.DatabaseTypeName().
-	// With MySQL drivers, temporal types are reported as base names
-	// (e.g. TIMESTAMP/DATETIME) without precision suffixes such as "(6)".
-	return strings.ToUpper(strings.TrimSpace(columnType))
 }
 
 func decimalColumnType(columnInfo *ColumnInfo) ColumnType {
