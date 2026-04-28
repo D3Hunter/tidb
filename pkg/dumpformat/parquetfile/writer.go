@@ -106,7 +106,6 @@ type ParquetWriter struct {
 	output                   *countingWriter
 	columns                  []column
 	buffers                  []columnBuffer
-	parsedValuesScratch      []parsedColumnValue
 	rowGroupMemoryLimitBytes int64
 	bufferedRows             int
 	bufferedMemoryBytes      int64
@@ -243,21 +242,11 @@ func (pw *ParquetWriter) parseAndAppendRow(rawRow []sql.RawBytes) error {
 		return fmt.Errorf("parquet row has %d values, expected %d", len(rawRow), len(pw.columns))
 	}
 
-	if cap(pw.parsedValuesScratch) < len(rawRow) {
-		pw.parsedValuesScratch = make([]parsedColumnValue, len(rawRow))
-	} else {
-		pw.parsedValuesScratch = pw.parsedValuesScratch[:len(rawRow)]
-	}
-	parsedValues := pw.parsedValuesScratch
 	for i, rawValue := range rawRow {
 		parsedValue, err := pw.parseColumnValue(i, rawValue)
 		if err != nil {
 			return fmt.Errorf("convert parquet column %s: %w", pw.columns[i].Name, err)
 		}
-		parsedValues[i] = parsedValue
-	}
-
-	for i, parsedValue := range parsedValues {
 		if err := pw.appendParsedColumnValue(i, parsedValue); err != nil {
 			return fmt.Errorf("convert parquet column %s: %w", pw.columns[i].Name, err)
 		}

@@ -97,6 +97,20 @@ func TestParquetWriterWritesArrowReadableRows(t *testing.T) {
 
 		_, err = NewParquetWriter(&bytes.Buffer{}, []*ColumnInfo{{Name: "", DatabaseTypeName: "INT"}})
 		require.ErrorContains(t, err, "parquet column name is empty")
+
+		require.NotPanics(t, func() {
+			_, err = NewParquetWriter(&bytes.Buffer{}, []*ColumnInfo{
+				{Name: "bad_scale_gt_precision", DatabaseTypeName: "DECIMAL", Precision: 10, Scale: 11},
+			})
+			require.ErrorContains(t, err, "parquet decimal column bad_scale_gt_precision has invalid scale 11 for precision 10")
+		})
+
+		require.NotPanics(t, func() {
+			_, err = NewParquetWriter(&bytes.Buffer{}, []*ColumnInfo{
+				{Name: "bad_negative_scale", DatabaseTypeName: "DECIMAL", Precision: 10, Scale: -1},
+			})
+			require.ErrorContains(t, err, "parquet decimal column bad_negative_scale has invalid scale -1 for precision 10")
+		})
 	})
 
 	t.Run("Close closes writer and Write fails afterwards", func(t *testing.T) {

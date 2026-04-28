@@ -16,6 +16,7 @@ package parquetfile
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/apache/arrow-go/v18/parquet"
 	"github.com/apache/arrow-go/v18/parquet/schema"
@@ -25,11 +26,8 @@ func buildParquetSchemaFromColumns(columns []*ColumnInfo) (*schema.GroupNode, []
 	fields := make([]schema.Node, 0, len(columns))
 	parsedColumns := make([]column, 0, len(columns))
 	for _, columnInfo := range columns {
-		if columnInfo == nil {
-			return nil, nil, fmt.Errorf("parquet column info is nil")
-		}
-		if columnInfo.Name == "" {
-			return nil, nil, fmt.Errorf("parquet column name is empty")
+		if err := validateColumnInfo(columnInfo); err != nil {
+			return nil, nil, err
 		}
 
 		columnType := toColumnType(columnInfo)
@@ -65,6 +63,31 @@ func buildParquetSchemaFromColumns(columns []*ColumnInfo) (*schema.GroupNode, []
 		return nil, nil, err
 	}
 	return root, parsedColumns, nil
+}
+
+func validateColumnInfo(columnInfo *ColumnInfo) error {
+	if columnInfo == nil {
+		return fmt.Errorf("parquet column info is nil")
+	}
+	if columnInfo.Name == "" {
+		return fmt.Errorf("parquet column name is empty")
+	}
+
+	// Guard DECIMAL metadata before calling toColumnType. Arrow's
+	// schema.NewDecimalLogicalType panics for invalid scale bounds.
+	dbTypeName := strings.ToUpper(strings.TrimSpace(columnInfo.DatabaseTypeName))
+	if dbTypeName == "DECIMAL" && columnInfo.Precision > 0 && columnInfo.Precision <= 38 {
+		if columnInfo.Scale < 0 || columnInfo.Scale > columnInfo.Precision {
+			return fmt.Errorf(
+				"parquet decimal column %s has invalid scale %d for precision %d",
+				columnInfo.Name,
+				columnInfo.Scale,
+				columnInfo.Precision,
+			)
+		}
+	}
+
+	return nil
 }
 
 func newPrimitiveNode(column column) (schema.Node, error) {

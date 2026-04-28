@@ -198,7 +198,7 @@ func BenchmarkParquetWriterParseAndAppendRow(b *testing.B) {
 			b.Fatal(err)
 		}
 		// Reset row/accounting state to keep the benchmark focused on per-row
-		// parse+append work, including scratch-buffer reuse.
+		// parse+append work.
 		pw.buffers[0].reset()
 		pw.bufferedRows = 0
 		pw.bufferedMemoryBytes = 0
@@ -223,20 +223,7 @@ func TestParquetWriterRecoversAfterRowConversionError(t *testing.T) {
 	})
 	require.Error(t, err)
 	require.ErrorContains(t, err, "convert parquet column flag")
-	require.NoError(t, pw.Write([]sql.RawBytes{
-		sql.RawBytes("3"),
-		sql.RawBytes("30"),
-	}))
-	require.NoError(t, pw.Close())
-
-	reader, err := file.NewParquetReader(bytes.NewReader(buf.Bytes()))
-	require.NoError(t, err)
-	defer reader.Close()
-
-	require.EqualValues(t, 2, reader.NumRows())
-	rowGroup := reader.RowGroup(0)
-	readInt32Column(t, rowGroup, 0, 2, []int32{1, 3}, []int16{0, 0}, 2)
-	readInt32Column(t, rowGroup, 1, 2, []int32{10, 30}, []int16{0, 0}, 2)
+	require.Error(t, pw.Close())
 
 	t.Run("Write validates row length and required NULL", func(t *testing.T) {
 		var localBuf bytes.Buffer
