@@ -34,15 +34,16 @@ const (
 )
 
 func parseRawColumnValue(rawValue sql.RawBytes, column column) (any, bool, error) {
-	s := string(rawValue)
 	switch column.Physical {
 	case parquet.Types.Boolean:
+		s := string(rawValue)
 		v, err := strconv.ParseBool(s)
 		if err != nil {
 			return nil, false, err
 		}
 		return v, false, nil
 	case parquet.Types.Int32:
+		s := string(rawValue)
 		if _, ok := column.Logical.(schema.DecimalLogicalType); ok {
 			scaled, err := parseDecimalToScaledInteger(s, column.ColumnType.Scale)
 			if err != nil {
@@ -63,6 +64,7 @@ func parseRawColumnValue(rawValue sql.RawBytes, column column) (any, bool, error
 		}
 		return int32(v), false, nil
 	case parquet.Types.Int64:
+		s := string(rawValue)
 		if _, ok := column.Logical.(schema.TimestampLogicalType); ok {
 			// For mysql text protocol, temporal values are emitted as
 			// "YYYY-MM-DD HH:MM:SS[.fraction]"; time.Parse(time.DateTime, s)
@@ -95,6 +97,7 @@ func parseRawColumnValue(rawValue sql.RawBytes, column column) (any, bool, error
 		}
 		return v, false, nil
 	case parquet.Types.Float:
+		s := string(rawValue)
 		// Kept for completeness when handling external/custom parquet schema:
 		// current ToColumnType maps SQL FLOAT to parquet.Types.Double.
 		v, err := strconv.ParseFloat(s, 32)
@@ -103,6 +106,7 @@ func parseRawColumnValue(rawValue sql.RawBytes, column column) (any, bool, error
 		}
 		return float32(v), false, nil
 	case parquet.Types.Double:
+		s := string(rawValue)
 		v, err := strconv.ParseFloat(s, 64)
 		if err != nil {
 			return nil, false, err
@@ -114,6 +118,7 @@ func parseRawColumnValue(rawValue sql.RawBytes, column column) (any, bool, error
 		return parquet.ByteArray(cloned), false, nil
 	case parquet.Types.FixedLenByteArray:
 		if _, ok := column.Logical.(schema.DecimalLogicalType); ok {
+			s := string(rawValue)
 			scaled, err := parseDecimalToScaledInteger(s, column.ColumnType.Scale)
 			if err != nil {
 				return nil, false, err
