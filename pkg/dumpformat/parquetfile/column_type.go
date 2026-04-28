@@ -27,7 +27,8 @@ import (
 // With MySQL drivers, temporal types are reported as base names
 // (e.g. TIMESTAMP/DATETIME) without precision suffixes such as "(6)".
 //
-// go-sql-driver/mysql DatabaseTypeName() doesn't emit below types:
+// go-sql-driver/mysql DatabaseTypeName() doesn't emit below types, we don't
+// handle them too:
 // NUMERIC, FIXED, UNSIGNED MEDIUMINT, VECTOR, NCHAR, NVARCHAR, CHARACTER,
 // VARCHARACTER, SQL_TSI_YEAR, VAR_STRING, LONG, INTEGER, INT1, INT2, INT3, INT8,
 // BOOL, BOOLEAN, REAL, DOUBLE PRECISION,

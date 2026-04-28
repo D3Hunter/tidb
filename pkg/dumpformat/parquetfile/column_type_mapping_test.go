@@ -35,18 +35,15 @@ func TestToColumnTypeMappings(t *testing.T) {
 		require.True(t, ok)
 	})
 
-	t.Run("maps NUMERIC as DECIMAL", func(t *testing.T) {
+	t.Run("maps NUMERIC as fallback BYTE_ARRAY", func(t *testing.T) {
 		columnType := ToColumnType(&ColumnInfo{Type: "NUMERIC", Precision: 10, Scale: 2})
-		require.Equal(t, parquet.Types.Int64, columnType.Physical)
-		_, ok := columnType.Logical.(schema.DecimalLogicalType)
-		require.True(t, ok)
-		require.Equal(t, 10, columnType.Precision)
-		require.Equal(t, 2, columnType.Scale)
+		require.Equal(t, parquet.Types.ByteArray, columnType.Physical)
+		require.Nil(t, columnType.Logical)
 	})
 
-	t.Run("maps UNSIGNED MEDIUMINT to INT32", func(t *testing.T) {
+	t.Run("maps UNSIGNED MEDIUMINT as fallback BYTE_ARRAY", func(t *testing.T) {
 		columnType := ToColumnType(&ColumnInfo{Type: "UNSIGNED MEDIUMINT"})
-		require.Equal(t, parquet.Types.Int32, columnType.Physical)
+		require.Equal(t, parquet.Types.ByteArray, columnType.Physical)
 	})
 
 	t.Run("maps DECIMAL precision 38 to FIXED_LEN_BYTE_ARRAY", func(t *testing.T) {
@@ -59,19 +56,18 @@ func TestToColumnTypeMappings(t *testing.T) {
 		require.Equal(t, 6, columnType.Scale)
 	})
 
-	t.Run("maps NUMERIC precision over 38 to string byte array", func(t *testing.T) {
+	t.Run("maps NUMERIC precision over 38 as fallback BYTE_ARRAY", func(t *testing.T) {
 		columnType := ToColumnType(&ColumnInfo{Type: "NUMERIC", Precision: 39, Scale: 2})
 		require.Equal(t, parquet.Types.ByteArray, columnType.Physical)
-		_, ok := columnType.Logical.(schema.StringLogicalType)
-		require.True(t, ok)
+		require.Nil(t, columnType.Logical)
 	})
 
 	t.Run("maps MariaDB aliases and unknown types", func(t *testing.T) {
 		realType := ToColumnType(&ColumnInfo{Type: "REAL"})
-		require.Equal(t, parquet.Types.Double, realType.Physical)
+		require.Equal(t, parquet.Types.ByteArray, realType.Physical)
 
 		boolType := ToColumnType(&ColumnInfo{Type: "BOOL"})
-		require.Equal(t, parquet.Types.Boolean, boolType.Physical)
+		require.Equal(t, parquet.Types.ByteArray, boolType.Physical)
 
 		ncharType := ToColumnType(&ColumnInfo{Type: "NCHAR"})
 		require.Equal(t, parquet.Types.ByteArray, ncharType.Physical)
@@ -136,13 +132,13 @@ func TestToColumnTypeMappings(t *testing.T) {
 		require.Equal(t, parquet.Types.Double, doubleType.Physical)
 
 		integerAlias := ToColumnType(&ColumnInfo{Type: "INTEGER"})
-		require.Equal(t, parquet.Types.Int32, integerAlias.Physical)
+		require.Equal(t, parquet.Types.ByteArray, integerAlias.Physical)
 
 		int8Alias := ToColumnType(&ColumnInfo{Type: "INT8"})
-		require.Equal(t, parquet.Types.Int64, int8Alias.Physical)
+		require.Equal(t, parquet.Types.ByteArray, int8Alias.Physical)
 
 		fixedAlias := ToColumnType(&ColumnInfo{Type: "FIXED"})
-		require.Equal(t, parquet.Types.Double, fixedAlias.Physical)
+		require.Equal(t, parquet.Types.ByteArray, fixedAlias.Physical)
 	})
 }
 

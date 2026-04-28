@@ -148,23 +148,23 @@ func TestParquetWriterRecoversAfterRowConversionError(t *testing.T) {
 	var buf bytes.Buffer
 	pw, err := NewParquetWriter(&buf, []*ColumnInfo{
 		{Name: "id", Type: "INT"},
-		{Name: "flag", Type: "BOOLEAN"},
+		{Name: "flag", Type: "INT"},
 	})
 	require.NoError(t, err)
 
 	require.NoError(t, pw.Write([]sql.RawBytes{
 		sql.RawBytes("1"),
-		sql.RawBytes("true"),
+		sql.RawBytes("10"),
 	}))
 	err = pw.Write([]sql.RawBytes{
 		sql.RawBytes("2"),
-		sql.RawBytes("bad-bool"),
+		sql.RawBytes("bad-int"),
 	})
 	require.Error(t, err)
 	require.ErrorContains(t, err, "convert parquet column flag")
 	require.NoError(t, pw.Write([]sql.RawBytes{
 		sql.RawBytes("3"),
-		sql.RawBytes("false"),
+		sql.RawBytes("30"),
 	}))
 	require.NoError(t, pw.Close())
 
@@ -175,7 +175,7 @@ func TestParquetWriterRecoversAfterRowConversionError(t *testing.T) {
 	require.EqualValues(t, 2, reader.NumRows())
 	rowGroup := reader.RowGroup(0)
 	readInt32Column(t, rowGroup, 0, 2, []int32{1, 3}, []int16{0, 0}, 2)
-	readBooleanColumn(t, rowGroup, 1, 2, []bool{true, false}, []int16{0, 0}, 2)
+	readInt32Column(t, rowGroup, 1, 2, []int32{10, 30}, []int16{0, 0}, 2)
 
 	t.Run("Write validates row length and required NULL", func(t *testing.T) {
 		var localBuf bytes.Buffer

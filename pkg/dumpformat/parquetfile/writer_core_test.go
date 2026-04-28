@@ -79,14 +79,14 @@ func TestParquetWriterWritesArrowReadableRows(t *testing.T) {
 	require.Equal(t, parquet.Types.Int64, metaSchema.Column(3).PhysicalType())
 	require.EqualValues(t, 1, metaSchema.Column(3).MaxDefinitionLevel())
 	require.Equal(t, schema.ConvertedTypes.None, metaSchema.Column(3).ConvertedType())
-	require.Equal(t, parquet.Types.Boolean, metaSchema.Column(4).PhysicalType())
+	require.Equal(t, parquet.Types.ByteArray, metaSchema.Column(4).PhysicalType())
 
 	rowGroup := reader.RowGroup(0)
 	readInt32Column(t, rowGroup, 0, 2, []int32{1, 2}, []int16{0, 0}, 2)
 	readByteArrayColumn(t, rowGroup, 1, 2, []string{"Alice"}, []int16{1, 0}, 1)
 	readInt64Column(t, rowGroup, 2, 2, []int64{12345, -50}, []int16{0, 0}, 2)
 	readInt64Column(t, rowGroup, 3, 2, []int64{time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC).UnixMicro()}, []int16{1, 0}, 1)
-	readBooleanColumn(t, rowGroup, 4, 2, []bool{true, false}, []int16{1, 1}, 2)
+	readByteArrayColumn(t, rowGroup, 4, 2, []string{"true", "false"}, []int16{1, 1}, 2)
 
 	t.Run("validates writer constructor inputs", func(t *testing.T) {
 		_, err := NewParquetWriter(nil, columns)
