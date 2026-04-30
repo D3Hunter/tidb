@@ -423,7 +423,7 @@ type LoadDataController struct {
 	// - "...(a,b) set b=100" will set b=100 in mysql, but in tidb the set is ignored.
 	// - ref columns in set clause is allowed in mysql, but not in tidb
 	InsertColumns []*table.Column
-	Location      *time.Location
+	location      *time.Location
 	logger        *zap.Logger
 	dataStore     storeapi.Storage
 	dataFiles     []*mydump.SourceFileMeta
@@ -706,9 +706,9 @@ func NewLoadDataController(plan *Plan, tbl table.Table, astArgs *ASTArgs, option
 	var loc *time.Location
 	// historically, we store *time.Location in Plan, but *time.Location cannot
 	// be marshaled into JSON, we now only store location name in Plan, and load
-	// location when creating controller, for those old plans, we keep the Location
-	// nil. it's semantically the same as the old incorrectly marshaled Location,
-	// both will be taken as UTC when used to parse parquet files.
+	// location when creating controller. For old plans without LocationID, keep
+	// the controller location nil so parquet parsing uses its existing nil-location
+	// fallback, timeutil.SystemLocation().
 	// see sparkRebaseTimeZoneID too.
 	if plan.LocationID != "" {
 		location, err := loadLocationFromID(plan.LocationID)
@@ -721,7 +721,7 @@ func NewLoadDataController(plan *Plan, tbl table.Table, astArgs *ASTArgs, option
 		Plan:            plan,
 		ASTArgs:         astArgs,
 		Table:           tbl,
-		Location:        loc,
+		location:        loc,
 		logger:          logger,
 		ExecuteNodesCnt: 1,
 	}
@@ -738,6 +738,12 @@ func NewLoadDataController(plan *Plan, tbl table.Table, astArgs *ASTArgs, option
 		return nil, err
 	}
 	return c, nil
+}
+
+// ParquetLocation returns the timezone used to interpret parquet temporal values.
+// Callers should treat the returned location as read-only controller state.
+func (e *LoadDataController) ParquetLocation() *time.Location {
+	return e.location
 }
 
 // InitTiKVConfigs initializes some TiKV related configs.
@@ -1567,7 +1573,7 @@ func (e *LoadDataController) InitDataFiles(ctx context.Context) error {
 			FileSize:    size,
 			Compression: compressTp,
 			Type:        sourceType,
-			ParquetMeta: mydump.ParquetFileMeta{Loc: e.Location},
+			ParquetMeta: mydump.ParquetFileMeta{Loc: e.location},
 		}
 		fileMeta.RealSize = mydump.EstimateRealSizeForFile(ctx, fileMeta, s)
 		fileMeta.RealSize = int64(float64(fileMeta.RealSize) * compressionRatio)
@@ -1624,7 +1630,7 @@ func (e *LoadDataController) InitDataFiles(ctx context.Context) error {
 					FileSize:    size,
 					Compression: compressTp,
 					Type:        sourceType,
-					ParquetMeta: mydump.ParquetFileMeta{Loc: e.Location},
+					ParquetMeta: mydump.ParquetFileMeta{Loc: e.location},
 				}
 				fileMeta.RealSize = int64(ce.estimate(ctx, fileMeta, s) * float64(fileMeta.FileSize))
 				fileMeta.RealSize = int64(float64(fileMeta.RealSize) * sizeExpansionRatio)
