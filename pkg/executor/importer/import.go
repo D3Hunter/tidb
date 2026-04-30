@@ -24,7 +24,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -455,14 +454,11 @@ func getImportantSysVars(sctx sessionctx.Context) map[string]string {
 }
 
 func getLocationID(sctx sessionctx.Context) string {
-	sessionVars := sctx.GetSessionVars()
-	if timeZone, ok := sessionVars.GetSystemVar(vardef.TimeZone); ok && !strings.EqualFold(timeZone, "SYSTEM") {
-		return timeZone
-	}
-	location := sessionVars.Location()
+	location := sctx.GetSessionVars().Location()
 	if locationID := location.String(); locationID != "" {
 		return locationID
 	}
+	// time_zone also can be set by "set time_zone='+08:00'"
 	_, offset := time.Now().In(location).Zone()
 	return formatTimeZoneOffset(offset)
 }
@@ -648,57 +644,6 @@ func WithLogger(logger *zap.Logger) Option {
 	}
 }
 
-func loadLocationFromID(locationID string) (*time.Location, error) {
-	location, err := timeutil.ParseTimeZone(locationID)
-	if err == nil {
-		return location, nil
-	}
-	if location, ok := parseUTCFixedZone(locationID); ok {
-		return location, nil
-	}
-	return nil, err
-}
-
-func parseUTCFixedZone(locationID string) (*time.Location, bool) {
-	if !strings.HasPrefix(locationID, "UTC+") && !strings.HasPrefix(locationID, "UTC-") {
-		return nil, false
-	}
-
-	sign := locationID[len("UTC")]
-	parts := strings.Split(locationID[len("UTC")+1:], ":")
-	if len(parts) == 0 || len(parts) > 2 || parts[0] == "" {
-		return nil, false
-	}
-	hours, err := strconv.Atoi(parts[0])
-	if err != nil {
-		return nil, false
-	}
-	minutes := 0
-	if len(parts) == 2 {
-		if len(parts[1]) != 2 {
-			return nil, false
-		}
-		minutes, err = strconv.Atoi(parts[1])
-		if err != nil {
-			return nil, false
-		}
-	}
-	if hours < 0 || minutes < 0 || minutes >= 60 {
-		return nil, false
-	}
-
-	offset := hours*int(time.Hour/time.Second) + minutes*int(time.Minute/time.Second)
-	if sign == '-' {
-		if offset > int((12*time.Hour+59*time.Minute)/time.Second) {
-			return nil, false
-		}
-		offset = -offset
-	} else if offset > int((14*time.Hour)/time.Second) {
-		return nil, false
-	}
-	return time.FixedZone(locationID, offset), true
-}
-
 // NewLoadDataController create new controller.
 func NewLoadDataController(plan *Plan, tbl table.Table, astArgs *ASTArgs, options ...Option) (*LoadDataController, error) {
 	fullTableName := tbl.Meta().Name.String()
@@ -711,7 +656,7 @@ func NewLoadDataController(plan *Plan, tbl table.Table, astArgs *ASTArgs, option
 	// compatibility fallback before the location is passed to parquet parsing.
 	// see sparkRebaseTimeZoneID too.
 	if plan.LocationID != "" {
-		location, err := loadLocationFromID(plan.LocationID)
+		location, err := timeutil.ParseTimeZone(plan.LocationID)
 		if err != nil {
 			return nil, errors.Wrapf(err, "invalid location %s", plan.LocationID)
 		}
