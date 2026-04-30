@@ -453,27 +453,6 @@ func getImportantSysVars(sctx sessionctx.Context) map[string]string {
 	return res
 }
 
-func getLocationID(sctx sessionctx.Context) string {
-	location := sctx.GetSessionVars().Location()
-	if locationID := location.String(); locationID != "" {
-		return locationID
-	}
-	// time_zone also can be set by "set time_zone='+08:00'"
-	_, offset := time.Now().In(location).Zone()
-	return formatTimeZoneOffset(offset)
-}
-
-func formatTimeZoneOffset(offset int) string {
-	sign := '+'
-	if offset < 0 {
-		sign = '-'
-		offset = -offset
-	}
-	hours := offset / int(time.Hour/time.Second)
-	minutes := offset % int(time.Hour/time.Second) / int(time.Minute/time.Second)
-	return fmt.Sprintf("%c%02d:%02d", sign, hours, minutes)
-}
-
 // NewPlanFromLoadDataPlan creates a import plan from LOAD DATA.
 func NewPlanFromLoadDataPlan(userSctx sessionctx.Context, plan *plannercore.LoadData) (*Plan, error) {
 	fullTableName := common.UniqueTable(plan.Table.Schema.L, plan.Table.Name.L)
@@ -547,7 +526,10 @@ func NewImportPlan(ctx context.Context, userSctx sessionctx.Context, plan *plann
 	}
 	restrictive := userSctx.GetSessionVars().SQLMode.HasStrictMode()
 	lineFieldsInfo := newDefaultLineFieldsInfo()
-
+	// TiDB doesn't support setting zones like UTC+8, it should be parsable by
+	// ParseTimeZone, i.e. in IANA format like Asia/Shanghai, or in offset form
+	// like +08:00.
+	location := userSctx.GetSessionVars().Location()
 	p := &Plan{
 		TableInfo:        tbl.Meta(),
 		DesiredTableInfo: tbl.Meta(),
@@ -560,7 +542,7 @@ func NewImportPlan(ctx context.Context, userSctx sessionctx.Context, plan *plann
 		FieldNullDef:   defaultFieldNullDef,
 		LineFieldsInfo: lineFieldsInfo,
 
-		LocationID:       getLocationID(userSctx),
+		LocationID:       timeutil.ZoneName(location),
 		SQLMode:          userSctx.GetSessionVars().SQLMode,
 		ImportantSysVars: getImportantSysVars(userSctx),
 
