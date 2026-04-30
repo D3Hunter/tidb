@@ -24,6 +24,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -74,6 +75,7 @@ import (
 	"github.com/pingcap/tidb/pkg/util/naming"
 	sem "github.com/pingcap/tidb/pkg/util/sem/compat"
 	"github.com/pingcap/tidb/pkg/util/stringutil"
+	"github.com/pingcap/tidb/pkg/util/timeutil"
 	pd "github.com/tikv/pd/client"
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
@@ -452,6 +454,30 @@ func getImportantSysVars(sctx sessionctx.Context) map[string]string {
 	return res
 }
 
+func getLocationID(sctx sessionctx.Context) string {
+	sessionVars := sctx.GetSessionVars()
+	if timeZone, ok := sessionVars.GetSystemVar(vardef.TimeZone); ok && !strings.EqualFold(timeZone, "SYSTEM") {
+		return timeZone
+	}
+	location := sessionVars.Location()
+	if locationID := location.String(); locationID != "" {
+		return locationID
+	}
+	_, offset := time.Now().In(location).Zone()
+	return formatTimeZoneOffset(offset)
+}
+
+func formatTimeZoneOffset(offset int) string {
+	sign := '+'
+	if offset < 0 {
+		sign = '-'
+		offset = -offset
+	}
+	hours := offset / int(time.Hour/time.Second)
+	minutes := offset % int(time.Hour/time.Second) / int(time.Minute/time.Second)
+	return fmt.Sprintf("%c%02d:%02d", sign, hours, minutes)
+}
+
 // NewPlanFromLoadDataPlan creates a import plan from LOAD DATA.
 func NewPlanFromLoadDataPlan(userSctx sessionctx.Context, plan *plannercore.LoadData) (*Plan, error) {
 	fullTableName := common.UniqueTable(plan.Table.Schema.L, plan.Table.Name.L)
@@ -526,7 +552,6 @@ func NewImportPlan(ctx context.Context, userSctx sessionctx.Context, plan *plann
 	restrictive := userSctx.GetSessionVars().SQLMode.HasStrictMode()
 	lineFieldsInfo := newDefaultLineFieldsInfo()
 
-	location := userSctx.GetSessionVars().Location()
 	p := &Plan{
 		TableInfo:        tbl.Meta(),
 		DesiredTableInfo: tbl.Meta(),
@@ -539,7 +564,7 @@ func NewImportPlan(ctx context.Context, userSctx sessionctx.Context, plan *plann
 		FieldNullDef:   defaultFieldNullDef,
 		LineFieldsInfo: lineFieldsInfo,
 
-		LocationID:       location.String(),
+		LocationID:       getLocationID(userSctx),
 		SQLMode:          userSctx.GetSessionVars().SQLMode,
 		ImportantSysVars: getImportantSysVars(userSctx),
 
@@ -623,6 +648,57 @@ func WithLogger(logger *zap.Logger) Option {
 	}
 }
 
+func loadLocationFromID(locationID string) (*time.Location, error) {
+	location, err := timeutil.ParseTimeZone(locationID)
+	if err == nil {
+		return location, nil
+	}
+	if location, ok := parseUTCFixedZone(locationID); ok {
+		return location, nil
+	}
+	return nil, err
+}
+
+func parseUTCFixedZone(locationID string) (*time.Location, bool) {
+	if !strings.HasPrefix(locationID, "UTC+") && !strings.HasPrefix(locationID, "UTC-") {
+		return nil, false
+	}
+
+	sign := locationID[len("UTC")]
+	parts := strings.Split(locationID[len("UTC")+1:], ":")
+	if len(parts) == 0 || len(parts) > 2 || parts[0] == "" {
+		return nil, false
+	}
+	hours, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return nil, false
+	}
+	minutes := 0
+	if len(parts) == 2 {
+		if len(parts[1]) != 2 {
+			return nil, false
+		}
+		minutes, err = strconv.Atoi(parts[1])
+		if err != nil {
+			return nil, false
+		}
+	}
+	if hours < 0 || minutes < 0 || minutes >= 60 {
+		return nil, false
+	}
+
+	offset := hours*int(time.Hour/time.Second) + minutes*int(time.Minute/time.Second)
+	if sign == '-' {
+		if offset > int((12*time.Hour+59*time.Minute)/time.Second) {
+			return nil, false
+		}
+		offset = -offset
+	} else if offset > int((14*time.Hour)/time.Second) {
+		return nil, false
+	}
+	return time.FixedZone(locationID, offset), true
+}
+
 // NewLoadDataController create new controller.
 func NewLoadDataController(plan *Plan, tbl table.Table, astArgs *ASTArgs, options ...Option) (*LoadDataController, error) {
 	fullTableName := tbl.Meta().Name.String()
@@ -635,7 +711,7 @@ func NewLoadDataController(plan *Plan, tbl table.Table, astArgs *ASTArgs, option
 	// both will be taken as UTC when used to parse parquet files.
 	// see sparkRebaseTimeZoneID too.
 	if plan.LocationID != "" {
-		location, err := time.LoadLocation(plan.LocationID)
+		location, err := loadLocationFromID(plan.LocationID)
 		if err != nil {
 			return nil, errors.Wrapf(err, "invalid location %s", plan.LocationID)
 		}

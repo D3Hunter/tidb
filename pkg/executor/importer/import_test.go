@@ -374,14 +374,10 @@ func TestGetLocalBackendCfg(t *testing.T) {
 	require.Greater(t, cfg.RaftKV2SwitchModeDuration, time.Duration(0))
 	require.Equal(t, config.DefaultSwitchTiKVModeInterval, cfg.RaftKV2SwitchModeDuration)
 
-	t.Run("import_plan_parquet_location", func(t *testing.T) {
-		ctx := context.Background()
-		sctx := mock.NewContext()
+	ctx := context.Background()
+	newParquetPlanAndController := func(t *testing.T, sctx *mock.Context) (*Plan, *LoadDataController) {
+		t.Helper()
 		sctx.Store = keyspaceOnlyStore{}
-		asiaShanghai, err := time.LoadLocation("Asia/Shanghai")
-		require.NoError(t, err)
-		sctx.GetSessionVars().TimeZone = asiaShanghai
-		sctx.GetSessionVars().StmtCtx.SetTimeZone(asiaShanghai)
 
 		node, err := parser.New().ParseOneStmt("create table t(a timestamp)", "", "")
 		require.NoError(t, err)
@@ -408,10 +404,21 @@ func TestGetLocalBackendCfg(t *testing.T) {
 			},
 		}.Init(sctx.GetPlanCtx()), table)
 		require.NoError(t, err)
-		require.Equal(t, "Asia/Shanghai", plan.LocationID)
 
 		controller, err := NewLoadDataController(plan, table, &ASTArgs{})
 		require.NoError(t, err)
+		return plan, controller
+	}
+
+	t.Run("import_plan_parquet_location", func(t *testing.T) {
+		sctx := mock.NewContext()
+		asiaShanghai, err := time.LoadLocation("Asia/Shanghai")
+		require.NoError(t, err)
+		sctx.GetSessionVars().TimeZone = asiaShanghai
+		sctx.GetSessionVars().StmtCtx.SetTimeZone(asiaShanghai)
+
+		plan, controller := newParquetPlanAndController(t, sctx)
+		require.Equal(t, "Asia/Shanghai", plan.LocationID)
 		require.NotNil(t, controller.Location)
 		require.Equal(t, "Asia/Shanghai", controller.Location.String())
 
@@ -419,6 +426,48 @@ func TestGetLocalBackendCfg(t *testing.T) {
 		require.NoError(t, controller.InitDataFiles(ctx))
 		require.Len(t, controller.dataFiles, 1)
 		require.Same(t, controller.Location, controller.dataFiles[0].ParquetMeta.Loc)
+	})
+
+	t.Run("import_plan_parquet_fixed_offset_location", func(t *testing.T) {
+		sctx := mock.NewContext()
+		require.NoError(t, sctx.GetSessionVars().SetSystemVar(vardef.TimeZone, "+08:00"))
+
+		plan, controller := newParquetPlanAndController(t, sctx)
+		require.Equal(t, "+08:00", plan.LocationID)
+		require.NotNil(t, controller.Location)
+		_, offset := time.Now().In(controller.Location).Zone()
+		require.Equal(t, 8*3600, offset)
+
+		testfailpoint.Enable(t, "github.com/pingcap/tidb/pkg/executor/importer/skipEstimateCompressionForParquet", "return(true)")
+		require.NoError(t, controller.InitDataFiles(ctx))
+		require.Len(t, controller.dataFiles, 1)
+		require.Same(t, controller.Location, controller.dataFiles[0].ParquetMeta.Loc)
+	})
+
+	t.Run("import_plan_parquet_named_fixed_zone_location", func(t *testing.T) {
+		sctx := mock.NewContext()
+		loc := time.FixedZone("UTC+8", 8*3600)
+		sctx.GetSessionVars().TimeZone = loc
+		sctx.GetSessionVars().StmtCtx.SetTimeZone(loc)
+
+		plan, controller := newParquetPlanAndController(t, sctx)
+		require.Equal(t, "UTC+8", plan.LocationID)
+		require.NotNil(t, controller.Location)
+		_, offset := time.Now().In(controller.Location).Zone()
+		require.Equal(t, 8*3600, offset)
+	})
+
+	t.Run("import_plan_parquet_unnamed_fixed_zone_location", func(t *testing.T) {
+		sctx := mock.NewContext()
+		loc := time.FixedZone("", -6*3600)
+		sctx.GetSessionVars().TimeZone = loc
+		sctx.GetSessionVars().StmtCtx.SetTimeZone(loc)
+
+		plan, controller := newParquetPlanAndController(t, sctx)
+		require.Equal(t, "-06:00", plan.LocationID)
+		require.NotNil(t, controller.Location)
+		_, offset := time.Now().In(controller.Location).Zone()
+		require.Equal(t, -6*3600, offset)
 	})
 }
 
