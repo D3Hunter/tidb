@@ -655,7 +655,15 @@ func NewParquetParser(
 					return nil, errors.Errorf("unsupported timestamp time unit %d", t.TimeUnit())
 				}
 				colTypes[i].IsAdjustedToUTC = t.IsAdjustedToUTC()
-			} else if t, ok := logicalType.(*schema.TimeLogicalType); ok {
+			} else if t, ok := logicalType.(schema.TimeLogicalType); ok {
+				// TimeLogicalType.ToConvertedType() returns none when
+				// IsAdjustedToUTC=false, so preserve the logical time unit here.
+				switch t.TimeUnit() {
+				case schema.TimeUnitMillis:
+					colTypes[i].converted = schema.ConvertedTypes.TimeMillis
+				case schema.TimeUnitMicros:
+					colTypes[i].converted = schema.ConvertedTypes.TimeMicros
+				}
 				colTypes[i].IsAdjustedToUTC = t.IsAdjustedToUTC()
 			} else {
 				colTypes[i].IsAdjustedToUTC = true

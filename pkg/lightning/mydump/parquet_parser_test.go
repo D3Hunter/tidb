@@ -404,6 +404,55 @@ func TestParquetVariousTypes(t *testing.T) {
 		}
 	})
 
+	t.Run("logical_time_local_semantics", func(t *testing.T) {
+		asiaShanghai, err := time.LoadLocation("Asia/Shanghai")
+		require.NoError(t, err)
+
+		const timeMillis = int32(123456)
+		const timeMicros = int64(123456789)
+		pc := []ParquetColumn{
+			{
+				Name:    "time_millis_local",
+				Type:    parquet.Types.Int32,
+				Logical: schema.NewTimeLogicalType(false, schema.TimeUnitMillis),
+				Gen: func(_ int) (any, []int16) {
+					return []int32{timeMillis}, []int16{1}
+				},
+			},
+			{
+				Name:    "time_micros_local",
+				Type:    parquet.Types.Int64,
+				Logical: schema.NewTimeLogicalType(false, schema.TimeUnitMicros),
+				Gen: func(_ int) (any, []int16) {
+					return []int64{timeMicros}, []int16{1}
+				},
+			},
+		}
+
+		dir := t.TempDir()
+		name := "logical-time-local.parquet"
+		require.NoError(t, WriteParquetFile(dir, name, pc, 1))
+
+		reader := newParquetParserForTest(context.Background(), t, dir, name, ParquetFileMeta{Loc: asiaShanghai})
+		require.Equal(t, schema.ConvertedTypes.TimeMillis, reader.colTypes[0].converted)
+		require.Equal(t, schema.ConvertedTypes.TimeMicros, reader.colTypes[1].converted)
+		require.False(t, reader.colTypes[0].IsAdjustedToUTC)
+		require.False(t, reader.colTypes[1].IsAdjustedToUTC)
+
+		require.NoError(t, reader.ReadRow())
+		row := reader.lastRow.Row
+		require.Len(t, row, 2)
+		expected := []time.Time{
+			time.Date(1970, 1, 1, 0, 2, 3, 456000000, time.UTC),
+			time.Date(1970, 1, 1, 0, 2, 3, 456789000, time.UTC),
+		}
+		for i, want := range expected {
+			got, err := row[i].GetMysqlTime().GoTime(time.UTC)
+			require.NoError(t, err)
+			require.Equal(t, want, got)
+		}
+	})
+
 	t.Run("unsupported_logical_timestamp_nanos", func(t *testing.T) {
 		pc := []ParquetColumn{
 			{

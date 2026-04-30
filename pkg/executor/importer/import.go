@@ -705,10 +705,10 @@ func NewLoadDataController(plan *Plan, tbl table.Table, astArgs *ASTArgs, option
 	logger := log.L().With(zap.String("table", fullTableName))
 	loc := time.UTC
 	// historically, we store *time.Location in Plan, but *time.Location cannot
-	// be marshaled into JSON, we now only store location name in Plan, and load
-	// location when creating controller. Old task metadata has no LocationID, so
-	// use UTC as the compatibility fallback before the location is passed to
-	// parquet parsing.
+	// be marshaled into JSON. New task metadata stores a timezone specifier
+	// string (IANA name or offset form), and resolves it when creating the
+	// controller. Old task metadata has no LocationID, so use UTC as the
+	// compatibility fallback before the location is passed to parquet parsing.
 	// see sparkRebaseTimeZoneID too.
 	if plan.LocationID != "" {
 		location, err := loadLocationFromID(plan.LocationID)
