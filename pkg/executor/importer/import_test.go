@@ -16,6 +16,7 @@ package importer
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/url"
@@ -471,6 +472,45 @@ func TestImportPlanParquetLocation(t *testing.T) {
 		require.NotNil(t, controller.ParquetLocation())
 		_, offset := time.Now().In(controller.ParquetLocation()).Zone()
 		require.Equal(t, -6*3600, offset)
+	})
+
+	t.Run("legacy_import_task_meta_without_location_id_uses_utc", func(t *testing.T) {
+		sctx := mock.NewContext()
+		asiaShanghai, err := time.LoadLocation("Asia/Shanghai")
+		require.NoError(t, err)
+		sctx.GetSessionVars().TimeZone = asiaShanghai
+		sctx.GetSessionVars().StmtCtx.SetTimeZone(asiaShanghai)
+
+		plan, controller := newParquetPlanAndControllerForTest(ctx, t, sctx)
+		taskMetaBytes, err := json.Marshal(struct {
+			Plan *Plan
+		}{
+			Plan: plan,
+		})
+		require.NoError(t, err)
+
+		var taskMeta map[string]any
+		require.NoError(t, json.Unmarshal(taskMetaBytes, &taskMeta))
+		planMeta, ok := taskMeta["Plan"].(map[string]any)
+		require.True(t, ok)
+		delete(planMeta, "LocationID")
+		legacyTaskMetaBytes, err := json.Marshal(taskMeta)
+		require.NoError(t, err)
+
+		var legacyTaskMeta struct {
+			Plan Plan
+		}
+		require.NoError(t, json.Unmarshal(legacyTaskMetaBytes, &legacyTaskMeta))
+		require.Empty(t, legacyTaskMeta.Plan.LocationID)
+
+		legacyController, err := NewLoadDataController(&legacyTaskMeta.Plan, controller.Table, &ASTArgs{})
+		require.NoError(t, err)
+		require.Same(t, time.UTC, legacyController.ParquetLocation())
+
+		testfailpoint.Enable(t, "github.com/pingcap/tidb/pkg/executor/importer/skipEstimateCompressionForParquet", "return(true)")
+		require.NoError(t, legacyController.InitDataFiles(ctx))
+		require.Len(t, legacyController.dataFiles, 1)
+		require.Same(t, time.UTC, legacyController.dataFiles[0].ParquetMeta.Loc)
 	})
 }
 

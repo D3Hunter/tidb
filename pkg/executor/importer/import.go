@@ -703,12 +703,12 @@ func parseUTCFixedZone(locationID string) (*time.Location, bool) {
 func NewLoadDataController(plan *Plan, tbl table.Table, astArgs *ASTArgs, options ...Option) (*LoadDataController, error) {
 	fullTableName := tbl.Meta().Name.String()
 	logger := log.L().With(zap.String("table", fullTableName))
-	var loc *time.Location
+	loc := time.UTC
 	// historically, we store *time.Location in Plan, but *time.Location cannot
 	// be marshaled into JSON, we now only store location name in Plan, and load
-	// location when creating controller. For old plans without LocationID, keep
-	// the controller location nil so parquet parsing uses its existing nil-location
-	// fallback, timeutil.SystemLocation().
+	// location when creating controller. Old task metadata has no LocationID, so
+	// use UTC as the compatibility fallback before the location is passed to
+	// parquet parsing.
 	// see sparkRebaseTimeZoneID too.
 	if plan.LocationID != "" {
 		location, err := loadLocationFromID(plan.LocationID)
