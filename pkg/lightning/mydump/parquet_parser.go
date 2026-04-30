@@ -643,6 +643,9 @@ func NewParquetParser(
 		if logicalType.IsValid() {
 			colTypes[i].converted, colTypes[i].decimalMeta = logicalType.ToConvertedType()
 			if t, ok := logicalType.(schema.TimestampLogicalType); ok {
+				// TimestampLogicalType.ToConvertedType() might return none when
+				// IsAdjustedToUTC=false, and not from force convert, so we have
+				// to check again here.
 				switch t.TimeUnit() {
 				case schema.TimeUnitMillis:
 					colTypes[i].converted = schema.ConvertedTypes.TimestampMillis
