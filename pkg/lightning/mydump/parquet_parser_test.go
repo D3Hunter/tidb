@@ -77,6 +77,101 @@ func newInt96FromUnixNanos(nanoseconds int64) parquet.Int96 {
 	return parquet.Int96(b)
 }
 
+type parquetLogicalColumn struct {
+	Name    string
+	Type    parquet.Type
+	Logical schema.LogicalType
+	TypeLen int
+	Gen     func(numRows int) (any, []int16)
+}
+
+func writeParquetLogicalFile(
+	t *testing.T,
+	path string,
+	fileName string,
+	pcolumns []parquetLogicalColumn,
+	rows int,
+	addOpts ...any,
+) {
+	t.Helper()
+
+	fields := make([]schema.Node, len(pcolumns))
+	opts := make([]parquet.WriterProperty, 0, len(pcolumns)*2)
+	for i, pc := range pcolumns {
+		typeLen := -1
+		if pc.TypeLen > 0 {
+			typeLen = pc.TypeLen
+		}
+		field, err := schema.NewPrimitiveNodeLogical(
+			pc.Name,
+			parquet.Repetitions.Optional,
+			pc.Logical,
+			pc.Type,
+			typeLen,
+			-1,
+		)
+		require.NoError(t, err)
+		fields[i] = field
+		opts = append(opts, parquet.WithDictionaryFor(pc.Name, true))
+		opts = append(opts, parquet.WithCompressionFor(pc.Name, compress.Codecs.Snappy))
+	}
+
+	var writerOpts []file.WriteOption
+	for _, opt := range addOpts {
+		switch v := opt.(type) {
+		case parquet.WriterProperty:
+			opts = append(opts, v)
+		case file.WriteOption:
+			writerOpts = append(writerOpts, v)
+		default:
+			require.Failf(t, "unsupported parquet writer option", "type %T", opt)
+		}
+	}
+	props := parquet.NewWriterProperties(opts...)
+	writerOpts = append(writerOpts, file.WithWriterProps(props))
+
+	node, err := schema.NewGroupNode("schema", parquet.Repetitions.Required, fields, -1)
+	require.NoError(t, err)
+
+	s, err := getStore(path)
+	require.NoError(t, err)
+	writer, err := s.Create(context.Background(), fileName, nil)
+	require.NoError(t, err)
+	wrapper := &writeWrapper{Writer: writer}
+
+	pw := file.NewParquetWriter(wrapper, node, writerOpts...)
+	defer func() {
+		require.NoError(t, pw.Close())
+	}()
+
+	colData := make([]parquetColumnData, 0, len(pcolumns))
+	for _, pc := range pcolumns {
+		vals, defLevels := pc.Gen(rows)
+		colData = append(colData, parquetColumnData{vals: vals, defLevels: defLevels})
+	}
+
+	rowGroupLen := int(props.MaxRowGroupLength())
+	if rowGroupLen <= 0 {
+		rowGroupLen = rows
+	}
+	for rowStart := 0; rowStart < rows; rowStart += rowGroupLen {
+		rowEnd := min(rows, rowStart+rowGroupLen)
+		rgw := pw.AppendRowGroup()
+
+		for colIdx := range pcolumns {
+			cw, err := rgw.NextColumn()
+			require.NoError(t, err)
+
+			rowVals, rowDefLevels, err := sliceColumnData(colData[colIdx], rowStart, rowEnd)
+			require.NoError(t, err)
+			require.NoError(t, writeParquetColumnBatch(cw, rowVals, rowDefLevels))
+			require.NoError(t, cw.Close())
+		}
+
+		require.NoError(t, rgw.Close())
+	}
+}
+
 func TestParquetParser(t *testing.T) {
 	pc := []ParquetColumn{
 		{
@@ -331,6 +426,102 @@ func TestParquetVariousTypes(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, expectedDatum, row[i])
 		}
+	})
+
+	t.Run("logical_timestamp_adjustment", func(t *testing.T) {
+		asiaShanghai, err := time.LoadLocation("Asia/Shanghai")
+		require.NoError(t, err)
+
+		const timestampMillis = int64(1603963672356)
+		const timestampMicros = int64(1603963672356956)
+		pc := []parquetLogicalColumn{
+			{
+				Name:    "timestamp_millis_instant",
+				Type:    parquet.Types.Int64,
+				Logical: schema.NewTimestampLogicalType(true, schema.TimeUnitMillis),
+				Gen: func(_ int) (any, []int16) {
+					return []int64{timestampMillis}, []int16{1}
+				},
+			},
+			{
+				Name:    "timestamp_micros_instant",
+				Type:    parquet.Types.Int64,
+				Logical: schema.NewTimestampLogicalType(true, schema.TimeUnitMicros),
+				Gen: func(_ int) (any, []int16) {
+					return []int64{timestampMicros}, []int16{1}
+				},
+			},
+			{
+				Name:    "timestamp_millis_local",
+				Type:    parquet.Types.Int64,
+				Logical: schema.NewTimestampLogicalType(false, schema.TimeUnitMillis),
+				Gen: func(_ int) (any, []int16) {
+					return []int64{timestampMillis}, []int16{1}
+				},
+			},
+			{
+				Name:    "timestamp_micros_local",
+				Type:    parquet.Types.Int64,
+				Logical: schema.NewTimestampLogicalType(false, schema.TimeUnitMicros),
+				Gen: func(_ int) (any, []int16) {
+					return []int64{timestampMicros}, []int16{1}
+				},
+			},
+		}
+
+		dir := t.TempDir()
+		name := "logical-timestamps.parquet"
+		writeParquetLogicalFile(t, dir, name, pc, 1)
+
+		reader := newParquetParserForTest(context.Background(), t, dir, name, ParquetFileMeta{Loc: asiaShanghai})
+		require.Equal(t, schema.ConvertedTypes.TimestampMillis, reader.colTypes[0].converted)
+		require.Equal(t, schema.ConvertedTypes.TimestampMicros, reader.colTypes[1].converted)
+		require.Equal(t, schema.ConvertedTypes.TimestampMillis, reader.colTypes[2].converted)
+		require.Equal(t, schema.ConvertedTypes.TimestampMicros, reader.colTypes[3].converted)
+		require.True(t, reader.colTypes[0].IsAdjustedToUTC)
+		require.True(t, reader.colTypes[1].IsAdjustedToUTC)
+		require.False(t, reader.colTypes[2].IsAdjustedToUTC)
+		require.False(t, reader.colTypes[3].IsAdjustedToUTC)
+
+		require.NoError(t, reader.ReadRow())
+		row := reader.lastRow.Row
+		require.Len(t, row, 4)
+		expected := []time.Time{
+			time.Date(2020, 10, 29, 17, 27, 52, 356000000, time.UTC),
+			time.Date(2020, 10, 29, 17, 27, 52, 356956000, time.UTC),
+			time.Date(2020, 10, 29, 9, 27, 52, 356000000, time.UTC),
+			time.Date(2020, 10, 29, 9, 27, 52, 356956000, time.UTC),
+		}
+		for i, want := range expected {
+			got, err := row[i].GetMysqlTime().GoTime(time.UTC)
+			require.NoError(t, err)
+			require.Equal(t, want, got)
+		}
+	})
+
+	t.Run("unsupported_logical_timestamp_nanos", func(t *testing.T) {
+		pc := []parquetLogicalColumn{
+			{
+				Name:    "timestamp_nanos",
+				Type:    parquet.Types.Int64,
+				Logical: schema.NewTimestampLogicalType(false, schema.TimeUnitNanos),
+				Gen: func(_ int) (any, []int16) {
+					return []int64{1603963672356956000}, []int16{1}
+				},
+			},
+		}
+
+		dir := t.TempDir()
+		name := "logical-timestamp-nanos.parquet"
+		writeParquetLogicalFile(t, dir, name, pc, 1)
+
+		store, err := objstore.NewLocalStorage(dir)
+		require.NoError(t, err)
+		r, err := store.Open(context.Background(), name, nil)
+		require.NoError(t, err)
+		parser, err := NewParquetParser(context.Background(), store, r, name, ParquetFileMeta{Loc: time.UTC})
+		require.ErrorContains(t, err, "unsupported timestamp time unit")
+		require.Nil(t, parser)
 	})
 
 	t.Run("int96_rounds_sub_microsecond_precision", func(t *testing.T) {

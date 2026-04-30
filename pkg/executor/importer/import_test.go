@@ -30,15 +30,19 @@ import (
 	"github.com/docker/go-units"
 	"github.com/pingcap/failpoint"
 	"github.com/pingcap/tidb/pkg/config/kerneltype"
+	"github.com/pingcap/tidb/pkg/ddl"
 	"github.com/pingcap/tidb/pkg/expression"
 	tidbkv "github.com/pingcap/tidb/pkg/kv"
 	"github.com/pingcap/tidb/pkg/lightning/config"
+	"github.com/pingcap/tidb/pkg/meta/model"
 	"github.com/pingcap/tidb/pkg/parser"
 	"github.com/pingcap/tidb/pkg/parser/ast"
 	plannercore "github.com/pingcap/tidb/pkg/planner/core"
 	"github.com/pingcap/tidb/pkg/planner/core/operator/physicalop"
+	"github.com/pingcap/tidb/pkg/planner/core/resolve"
 	plannerutil "github.com/pingcap/tidb/pkg/planner/util"
 	"github.com/pingcap/tidb/pkg/sessionctx/vardef"
+	"github.com/pingcap/tidb/pkg/table/tables"
 	"github.com/pingcap/tidb/pkg/testkit/testfailpoint"
 	"github.com/pingcap/tidb/pkg/types"
 	"github.com/pingcap/tidb/pkg/util/dbterror/exeerrors"
@@ -48,6 +52,14 @@ import (
 	tikvutil "github.com/tikv/client-go/v2/util"
 	"go.uber.org/zap"
 )
+
+type keyspaceOnlyStore struct {
+	tidbkv.Storage
+}
+
+func (keyspaceOnlyStore) GetKeyspace() string {
+	return ""
+}
 
 func TestInitDefaultOptions(t *testing.T) {
 	plan := &Plan{
@@ -361,6 +373,53 @@ func TestGetLocalBackendCfg(t *testing.T) {
 	cfg = c.getLocalBackendCfg("", "http://1.1.1.1:1234", "/tmp")
 	require.Greater(t, cfg.RaftKV2SwitchModeDuration, time.Duration(0))
 	require.Equal(t, config.DefaultSwitchTiKVModeInterval, cfg.RaftKV2SwitchModeDuration)
+
+	t.Run("import_plan_parquet_location", func(t *testing.T) {
+		ctx := context.Background()
+		sctx := mock.NewContext()
+		sctx.Store = keyspaceOnlyStore{}
+		asiaShanghai, err := time.LoadLocation("Asia/Shanghai")
+		require.NoError(t, err)
+		sctx.GetSessionVars().TimeZone = asiaShanghai
+		sctx.GetSessionVars().StmtCtx.SetTimeZone(asiaShanghai)
+
+		node, err := parser.New().ParseOneStmt("create table t(a timestamp)", "", "")
+		require.NoError(t, err)
+		tblInfo, err := ddl.MockTableInfo(sctx, node.(*ast.CreateTableStmt), 1)
+		require.NoError(t, err)
+		tblInfo.State = model.StatePublic
+		table := tables.MockTableFromMeta(tblInfo)
+
+		fileName := filepath.Join(t.TempDir(), "data.parquet")
+		require.NoError(t, os.WriteFile(fileName, nil, 0o644))
+		format := DataFormatParquet
+		plan, err := NewImportPlan(ctx, sctx, plannercore.ImportInto{
+			Path:   fileName,
+			Format: &format,
+			Table: &resolve.TableNameW{
+				TableName: &ast.TableName{
+					Schema: ast.NewCIStr("test"),
+					Name:   ast.NewCIStr("t"),
+				},
+				DBInfo: &model.DBInfo{
+					Name: ast.NewCIStr("test"),
+					ID:   1,
+				},
+			},
+		}.Init(sctx.GetPlanCtx()), table)
+		require.NoError(t, err)
+		require.Equal(t, "Asia/Shanghai", plan.LocationID)
+
+		controller, err := NewLoadDataController(plan, table, &ASTArgs{})
+		require.NoError(t, err)
+		require.NotNil(t, controller.Location)
+		require.Equal(t, "Asia/Shanghai", controller.Location.String())
+
+		testfailpoint.Enable(t, "github.com/pingcap/tidb/pkg/executor/importer/skipEstimateCompressionForParquet", "return(true)")
+		require.NoError(t, controller.InitDataFiles(ctx))
+		require.Len(t, controller.dataFiles, 1)
+		require.Same(t, controller.Location, controller.dataFiles[0].ParquetMeta.Loc)
+	})
 }
 
 func TestInitCompressedFiles(t *testing.T) {
