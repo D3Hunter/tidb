@@ -1,0 +1,135 @@
+// Copyright 2026 PingCAP, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// Package deploymode stores the process-wide TiDB deployment mode.
+package deploymode
+
+import (
+	"encoding/json"
+	"fmt"
+	"sync/atomic"
+)
+
+const (
+	premiumName         = "premium"
+	premiumReservedName = "premium_reserved"
+)
+
+// Mode is the deployment mode of the TiDB instance.
+type Mode int32
+
+const (
+	// Premium is the default deployment mode.
+	Premium Mode = iota
+	// PremiumReserved is the reserved premium deployment mode.
+	PremiumReserved
+)
+
+var currentMode atomic.Int32
+
+// Get returns the current deployment mode.
+func Get() Mode {
+	return Mode(currentMode.Load())
+}
+
+// Set updates the current deployment mode.
+//
+// The deployment mode is initialized during TiDB startup and should not be
+// changed during runtime.
+func Set(mode Mode) error {
+	if !mode.Valid() {
+		return fmt.Errorf("invalid deploy mode %d", mode)
+	}
+	currentMode.Store(int32(mode))
+	return nil
+}
+
+// Parse returns the deployment mode for the given string.
+func Parse(s string) (Mode, error) {
+	switch s {
+	case premiumName:
+		return Premium, nil
+	case premiumReservedName:
+		return PremiumReserved, nil
+	default:
+		return Premium, fmt.Errorf("invalid deploy mode %q", s)
+	}
+}
+
+// String returns the string representation of the deployment mode.
+func (m Mode) String() string {
+	switch m {
+	case Premium:
+		return premiumName
+	case PremiumReserved:
+		return premiumReservedName
+	default:
+		return fmt.Sprintf("unknown(%d)", m)
+	}
+}
+
+// Valid returns true if the deployment mode is valid.
+func (m Mode) Valid() bool {
+	switch m {
+	case Premium, PremiumReserved:
+		return true
+	default:
+		return false
+	}
+}
+
+// ModeList returns all valid deployment modes.
+func ModeList() []Mode {
+	return []Mode{Premium, PremiumReserved}
+}
+
+// MarshalJSON implements json.Marshaler.
+func (m Mode) MarshalJSON() ([]byte, error) {
+	if !m.Valid() {
+		return nil, fmt.Errorf("invalid deploy mode %d", m)
+	}
+	return json.Marshal(m.String())
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (m *Mode) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	mode, err := Parse(s)
+	if err != nil {
+		return err
+	}
+	*m = mode
+	return nil
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (m Mode) MarshalText() ([]byte, error) {
+	if !m.Valid() {
+		return nil, fmt.Errorf("invalid deploy mode %d", m)
+	}
+	return []byte(m.String()), nil
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (m *Mode) UnmarshalText(text []byte) error {
+	mode, err := Parse(string(text))
+	if err != nil {
+		return err
+	}
+	*m = mode
+	return nil
+}

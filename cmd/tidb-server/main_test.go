@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"github.com/pingcap/tidb/pkg/config"
+	"github.com/pingcap/tidb/pkg/config/deploymode"
 	"github.com/pingcap/tidb/pkg/config/kerneltype"
 	"github.com/pingcap/tidb/pkg/parser/mysql"
 	"github.com/pingcap/tidb/pkg/sessionctx/vardef"
@@ -91,6 +92,21 @@ func TestSetGlobalVars(t *testing.T) {
 	if hostname, err := os.Hostname(); err == nil {
 		require.Equal(t, variable.GetSysVar(vardef.Hostname).Value, hostname)
 	}
+}
+
+func TestInitDeployMode(t *testing.T) {
+	original := deploymode.Get()
+	t.Cleanup(func() {
+		require.NoError(t, deploymode.Set(original))
+	})
+
+	cfg := config.NewConfig()
+	cfg.DeployMode = deploymode.PremiumReserved
+	require.NoError(t, initDeployMode(cfg))
+	require.Equal(t, deploymode.PremiumReserved, deploymode.Get())
+
+	cfg.DeployMode = deploymode.Mode(100)
+	require.ErrorContains(t, initDeployMode(cfg), "invalid deploy mode")
 }
 
 func TestSetVersionByConfigInNextGen(t *testing.T) {
