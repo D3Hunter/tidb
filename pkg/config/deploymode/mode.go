@@ -18,6 +18,7 @@ package deploymode
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync/atomic"
 
 	"github.com/pingcap/tidb/pkg/config/kerneltype"
@@ -35,7 +36,9 @@ type Mode int32
 const (
 	// Premium is the default deployment mode.
 	Premium Mode = iota
-	// PremiumReserved is the reserved premium deployment mode.
+	// PremiumReserved is the reserved premium deployment mode. In Premium Reserved,
+	// resources are fixed when the cluster starts. TiDB-worker, TiKV-worker, and
+	// coprocessor-worker are not scaled on demand.
 	PremiumReserved
 )
 
@@ -44,6 +47,11 @@ var currentMode atomic.Int32
 // Get returns the current deployment mode.
 func Get() Mode {
 	return Mode(currentMode.Load())
+}
+
+// IsPremiumReserved returns true if the current deployment mode is PremiumReserved.
+func IsPremiumReserved() bool {
+	return kerneltype.IsNextGen() && Get() == PremiumReserved
 }
 
 // Set updates the current deployment mode.
@@ -63,7 +71,7 @@ func Set(mode Mode) error {
 
 // Parse returns the deployment mode for the given string.
 func Parse(s string) (Mode, error) {
-	switch s {
+	switch strings.ToLower(s) {
 	case premiumName:
 		return Premium, nil
 	case premiumReservedName:

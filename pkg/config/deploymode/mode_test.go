@@ -35,6 +35,9 @@ func TestModeJSON(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(`"premium_reserved"`), &mode))
 	require.Equal(t, PremiumReserved, mode)
 
+	require.NoError(t, json.Unmarshal([]byte(`"Premium_Reserved"`), &mode))
+	require.Equal(t, PremiumReserved, mode)
+
 	require.ErrorContains(t, json.Unmarshal([]byte(`"unknown"`), &mode), `invalid deploy mode "unknown"`)
 	require.Error(t, json.Unmarshal([]byte(`1`), &mode))
 }
@@ -47,23 +50,30 @@ func TestModeTOML(t *testing.T) {
 	_, err := toml.Decode(`deploy-mode = "premium_reserved"`, &cfg)
 	require.NoError(t, err)
 	require.Equal(t, PremiumReserved, cfg.Mode)
+
+	_, err = toml.Decode(`deploy-mode = "Premium"`, &cfg)
+	require.NoError(t, err)
+	require.Equal(t, Premium, cfg.Mode)
 }
 
 func TestCurrentMode(t *testing.T) {
+	original := Get()
+	t.Cleanup(func() {
+		currentMode.Store(int32(original))
+	})
+
 	if !kerneltype.IsNextGen() {
 		require.Equal(t, Premium, Get())
+		currentMode.Store(int32(PremiumReserved))
+		require.False(t, IsPremiumReserved())
 		require.ErrorContains(t, Set(PremiumReserved), "deploy mode can only be set for nextgen TiDB")
-		require.Equal(t, Premium, Get())
 		return
 	}
 
-	original := Get()
-	t.Cleanup(func() {
-		require.NoError(t, Set(original))
-	})
-
 	require.Equal(t, Premium, Get())
+	require.False(t, IsPremiumReserved())
 	require.NoError(t, Set(PremiumReserved))
 	require.Equal(t, PremiumReserved, Get())
+	require.True(t, IsPremiumReserved())
 	require.ErrorContains(t, Set(Mode(100)), "invalid deploy mode")
 }
