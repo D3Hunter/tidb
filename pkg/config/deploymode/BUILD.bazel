@@ -2,7 +2,10 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "deploymode",
-    srcs = ["mode.go"],
+    srcs = [
+        "doc.go",
+        "mode.go",
+    ],
     importpath = "github.com/pingcap/tidb/pkg/config/deploymode",
     visibility = ["//visibility:public"],
     deps = ["//pkg/config/kerneltype"],
