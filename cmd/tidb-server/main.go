@@ -295,7 +295,9 @@ func main() {
 		}
 	}
 	config.InitializeConfig(*configPath, *configCheck, *configStrict, overrideConfig, fset)
-	terror.MustNil(initDeployMode(config.GetGlobalConfig()))
+	if kerneltype.IsNextGen() {
+		terror.MustNil(initDeployMode(config.GetGlobalConfig()))
+	}
 	if *version {
 		mustInitVersions()
 		fmt.Println(printer.GetTiDBInfo())

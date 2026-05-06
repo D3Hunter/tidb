@@ -19,6 +19,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync/atomic"
+
+	"github.com/pingcap/tidb/pkg/config/kerneltype"
 )
 
 const (
@@ -26,7 +28,8 @@ const (
 	premiumReservedName = "premium_reserved"
 )
 
-// Mode is the deployment mode of the TiDB instance.
+// Mode is the deployment mode of the TiDB instance. It is only allowed when
+// kerneltype.IsNextGen returns true.
 type Mode int32
 
 const (
@@ -48,6 +51,9 @@ func Get() Mode {
 // The deployment mode is initialized during TiDB startup and should not be
 // changed during runtime.
 func Set(mode Mode) error {
+	if !kerneltype.IsNextGen() {
+		return fmt.Errorf("deploy mode can only be set for nextgen TiDB")
+	}
 	if !mode.Valid() {
 		return fmt.Errorf("invalid deploy mode %d", mode)
 	}
@@ -116,17 +122,13 @@ func (m *Mode) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// MarshalText implements encoding.TextMarshaler.
-func (m Mode) MarshalText() ([]byte, error) {
-	if !m.Valid() {
-		return nil, fmt.Errorf("invalid deploy mode %d", m)
+// UnmarshalTOML implements toml.Unmarshaler.
+func (m *Mode) UnmarshalTOML(v any) error {
+	s, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("invalid deploy mode %v", v)
 	}
-	return []byte(m.String()), nil
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (m *Mode) UnmarshalText(text []byte) error {
-	mode, err := Parse(string(text))
+	mode, err := Parse(s)
 	if err != nil {
 		return err
 	}

@@ -95,6 +95,10 @@ func TestSetGlobalVars(t *testing.T) {
 }
 
 func TestInitDeployMode(t *testing.T) {
+	if kerneltype.IsClassic() {
+		t.Skip("only for nextgen kernel")
+	}
+
 	original := deploymode.Get()
 	t.Cleanup(func() {
 		require.NoError(t, deploymode.Set(original))

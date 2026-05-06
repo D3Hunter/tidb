@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"github.com/BurntSushi/toml"
+	"github.com/pingcap/tidb/pkg/config/kerneltype"
 	"github.com/stretchr/testify/require"
 )
 
@@ -38,7 +39,7 @@ func TestModeJSON(t *testing.T) {
 	require.Error(t, json.Unmarshal([]byte(`1`), &mode))
 }
 
-func TestModeText(t *testing.T) {
+func TestModeTOML(t *testing.T) {
 	var cfg struct {
 		Mode Mode `toml:"deploy-mode"`
 	}
@@ -46,13 +47,16 @@ func TestModeText(t *testing.T) {
 	_, err := toml.Decode(`deploy-mode = "premium_reserved"`, &cfg)
 	require.NoError(t, err)
 	require.Equal(t, PremiumReserved, cfg.Mode)
-
-	text, err := Premium.MarshalText()
-	require.NoError(t, err)
-	require.Equal(t, "premium", string(text))
 }
 
 func TestCurrentMode(t *testing.T) {
+	if !kerneltype.IsNextGen() {
+		require.Equal(t, Premium, Get())
+		require.ErrorContains(t, Set(PremiumReserved), "deploy mode can only be set for nextgen TiDB")
+		require.Equal(t, Premium, Get())
+		return
+	}
+
 	original := Get()
 	t.Cleanup(func() {
 		require.NoError(t, Set(original))
