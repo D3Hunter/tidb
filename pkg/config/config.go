@@ -1382,6 +1382,9 @@ func (c *Config) Load(confFile string) error {
 	if err != nil {
 		return err
 	}
+	if !kerneltype.IsNextGen() && metaData.IsDefined("deploy-mode") {
+		return fmt.Errorf("deploy-mode can only be configured for nextgen TiDB")
+	}
 	if c.TokenLimit == 0 {
 		c.TokenLimit = 1000
 	} else if c.TokenLimit > MaxTokenLimit {
@@ -1449,6 +1452,9 @@ func (c *Config) Valid() error {
 	}
 	if !c.DeployMode.Valid() {
 		return fmt.Errorf("invalid deploy-mode=%s, valid deploy modes=%v", c.DeployMode, deploymode.ModeList())
+	}
+	if !kerneltype.IsNextGen() && c.DeployMode != deploymode.Premium {
+		return fmt.Errorf("deploy-mode can only be configured for nextgen TiDB")
 	}
 	if c.Store == StoreTypeMockTiKV && !c.Instance.TiDBEnableDDL.Load() {
 		return fmt.Errorf("can't disable DDL on mocktikv")

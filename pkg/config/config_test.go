@@ -1056,6 +1056,18 @@ func TestDeployModeConfig(t *testing.T) {
 
 	storeDir := t.TempDir()
 	configFile := filepath.Join(storeDir, "config.toml")
+
+	if kerneltype.IsClassic() {
+		require.NoError(t, os.WriteFile(configFile, []byte(`deploy-mode = "premium"`), 0644))
+		conf = NewConfig()
+		require.ErrorContains(t, conf.Load(configFile), "deploy-mode can only be configured for nextgen TiDB")
+
+		conf = NewConfig()
+		conf.DeployMode = deploymode.PremiumReserved
+		require.ErrorContains(t, conf.Valid(), "deploy-mode can only be configured for nextgen TiDB")
+		return
+	}
+
 	require.NoError(t, os.WriteFile(configFile, []byte(`deploy-mode = "premium_reserved"`), 0644))
 
 	conf = NewConfig()
