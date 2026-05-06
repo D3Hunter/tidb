@@ -26,4 +26,12 @@
 // avoiding TiKV-worker and coprocessor-worker deployment, and by merging TiDB
 // and TiDB-worker behavior. User traffic and distributed task execution run
 // directly on TiDB nodes, and they all run on the SYSTEM keyspace.
+//
+// Deploy mode is stored in TiDB component config. This can make the deploy mode
+// inconsistent across TiDB instances if different instances are started with
+// different config values. The tradeoff is intentional: keeping deploy mode in
+// TiDB config avoids changing other components and avoids maintaining separate
+// binaries. Premium Reserved is mainly used in cloud deployments, where all TiDB
+// instances in one group are started with the same config, so the consistency
+// risk is acceptable.
 package deploymode
