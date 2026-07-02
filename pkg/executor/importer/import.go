@@ -29,6 +29,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/docker/go-units"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/failpoint"
@@ -65,6 +66,7 @@ import (
 	"github.com/pingcap/tidb/pkg/table"
 	tidbutil "github.com/pingcap/tidb/pkg/util"
 	"github.com/pingcap/tidb/pkg/util/chunk"
+	"github.com/pingcap/tidb/pkg/util/collate"
 	contextutil "github.com/pingcap/tidb/pkg/util/context"
 	"github.com/pingcap/tidb/pkg/util/cpu"
 	"github.com/pingcap/tidb/pkg/util/dbterror"
@@ -335,6 +337,10 @@ type Plan struct {
 	ManualRecovery bool
 	// the keyspace name when submitting this job, only for import-into
 	Keyspace string
+	// user keyspace might disable new_collate, we should use this when encoding
+	// existing task will have a nil value, in this case we fall back to true
+	// which is the old default new_collate setting to be compatible.
+	UseNewCollate *bool `json:",omitempty"`
 }
 
 // GetOnDupKeyMode returns the conflict handling mode.
@@ -552,6 +558,7 @@ func NewImportPlan(ctx context.Context, userSctx sessionctx.Context, plan *plann
 		DataSourceType:         getDataSourceType(plan),
 		User:                   userSctx.GetSessionVars().User.String(),
 		Keyspace:               userSctx.GetStore().GetKeyspace(),
+		UseNewCollate:          aws.Bool(collate.NewCollationEnabled()),
 	}
 	if err := p.initOptions(ctx, userSctx, plan.Options); err != nil {
 		return nil, err
